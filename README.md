@@ -1,169 +1,138 @@
-<!-- Dawnload — open source project by Dawn Labs. Replace REPO_URL with the real repository URL before publishing. -->
-
 # Dawnload
 
-> Every URL gets its dawn.
->
-> Paste any media link into Dawnload and watch it come to life on your Mac — a native, free,
-> open-source downloader built by **Dawn Labs** on top of the strongest open tools the
-> community makes: `yt-dlp`, `gallery-dl`, and `ffmpeg`.
+A native macOS app for downloading media from the web. Paste a URL, choose a
+backend, pick your options, and download. The heavy lifting is done by three
+well-known open source tools — `yt-dlp`, `gallery-dl`, and `ffmpeg` — so there
+is no server component and no account to create.
 
-**Dawnload is a small app with a big philosophy**: the best downloaders in the world are
-already open source. We are not here to reinvent them — we are here to wrap them in a
-beautiful native macOS window so your grandma could download a playlist without reading a
-man page.
->
-
----
+Developed in the open by Dawn Labs. MIT licensed.
 
 ![macOS 13+](https://img.shields.io/badge/platform-macOS%2013%2B-black)
 [![License](https://img.shields.io/badge/license-MIT-white)](LICENSE)
 [![Swift](https://img.shields.io/badge/Swift-5.9-white)](Package.swift)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-black)](CONTRIBUTING.md)
 
-## What makes Dawnload different
+## Features
 
-- **Native, not a wrapper.** A real SwiftUI Mac app. Keyboard shortcuts, a proper menu, a collapsible queue, and no Electron weight anywhere.
-- **Zero extra accounts.** No login, no cloud, no telemetry. Your downloads stay on your Mac.
-- **Choose your engine.** `yt-dlp` for video sites and playlists, `gallery-dl` for galleries and image sets, `ffmpeg` for the polish.
-- **Impersonation when sites get rude.** Chrome 146 / 145 / 142 and Safari 18.4 profiles for gatekeeping sites, plus automatic `cookies.txt` support when you need a real browser session.
-- **Filenames that make sense.** Dawnload resurrects the title from the URL, rejects boring "just the ID" names, and never overwrites your files — duplicates get a smart `Title 2.mp4`.
-- **A queue that respects you.** Add ten links, press one button, walk away.
+- Downloads videos and media from any URL supported by `yt-dlp` or `gallery-dl`
+- Switch between backends inside the app
+- Quality options for `yt-dlp`: Best, Compatible (prefers MP4/M4A), and Audio (M4A)
+- `ffmpeg` polish: merging, remuxing, metadata embedding, and a final faststart pass
+- Browser impersonation for sites that reject normal requests (Chrome 146/145/142,
+  Safari 18.4)
+- Optional Netscape-format `cookies.txt` for sites that need a logged-in session
+- Smart filenames: prefers meaningful page titles, falls back to URL slugs, and
+  never overwrites existing files (duplicates get a `Title 2.mp4` suffix)
+- Playlist toggle for URLs that resolve to a single video or a playlist
+- A queue that downloads multiple URLs in order; each item keeps its own options
+- Finds `yt-dlp`, `gallery-dl`, and `ffmpeg` in `/opt/homebrew/bin`,
+  `/usr/local/bin`, and the app's `PATH`
 
----
+## Requirements
 
-## Install it in 60 seconds (no terminal skills needed)
+- macOS 13 (Ventura) or newer
+- `yt-dlp`, `gallery-dl`, and `ffmpeg`:
 
-Dawnload is built from source on your own Mac — the installer takes you along for the ride. Here is the whole thing, step by step:
+  ```sh
+  brew install yt-dlp gallery-dl ffmpeg
+  ```
 
-### Step 1 — Homebrew
+- Xcode Command Line Tools (or full Xcode) and Swift 5.9+ to build
 
-Open **Terminal** (Spotlight → type `Terminal` → Enter), paste this, and press Enter:
+## Installing the app
 
-```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
+Dawnload is distributed as source — you build it on your own Mac. The installer
+does the whole thing; it checks for missing tools, prompts you when it needs to
+install them, compiles the app, and puts it in `/Applications`.
 
-Follow the prompts. Homebrew is the App Store of command-line tools — the download engines we use all ship through it.
+1. If you don't have Homebrew yet, install it: <https://brew.sh>
+2. Clone the repo and run the installer:
 
-> Already have Homebrew? Skip to Step 3 — [`Scripts/install.sh`](Scripts/install.sh) checks everything else for you.
+   ```sh
+   git clone https://github.com/brenoandrew/Dawnload.git
+   cd Dawnload
+   ./Scripts/install.sh
+   ```
 
-### Step 2 — The download engines
+   Or run it without cloning:
 
-```sh
-brew install yt-dlp gallery-dl ffmpeg
-```
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/brenoandrew/Dawnload/main/Scripts/install.sh | bash
+   ```
 
-That is the entire stack. Three open-source command-line giants. Dawnload will protect them like a referee at a powerlifting meet.
+3. The first time you open the app, right-click it and choose **Open**.
+   Dawnload is not notarized yet, so Gatekeeper will ask once.
 
-### Step 3 — Clone & install
-
-Install the app and let the installer do the rest:
-
-```sh
-git clone https://github.com/dawn-labs/Dawnload.git
-cd Dawnload
-./Scripts/install.sh
-```
-
-Or install it from a single command, without ever touching the repo:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/dawn-labs/Dawnload/main/Scripts/install.sh | bash
-```
-
-> **What does the installer do?** It checks for macOS 13+, installs the Xcode command line
-> tools if needed, verifies Homebrew tools, compiles Dawnload.app, and places it in
-> `/Applications`. If something is missing, it tells you exactly what to do.
-
-### Step 4 — First launch
-
-1. Open **Dawnload** from Launchpad or Applications.
-2. Right-click → **Open** the very first time you see Gatekeeper (we are not notarized yet — Apple is still getting to know us).
-
----
-
-## Use it
-
-1. Copy a media URL from anywhere — your browser, your clipboard, your memory.
-2. Paste it into Dawnload (including `https://`).
-3. Pick the backend: `yt-dlp` for video/playlists, `gallery-dl` for image sets/galleries.
-4. Pick quality: **Best**, **Compatible**, or **Audio** (M4A).
-5. Leave *ffmpeg polish* on — it is the difference between "works" and "plays everywhere".
-6. Getting a 403? Enable *Browser impersonation* (Chrome 146 is the default profile).
-7. STILL a 403? Log into the site in your browser, export `cookies.txt`, and point Dawnload at it in Settings.
-8. Hit **Download**. Or **Add** to the queue and run them all in order.
-
-Every queued item remembers its own options and destination — queue your links the night
-before and let the downloads dawn on you in the morning.
-
----
-
-## Install for developers
-
-Dawnload is a vanilla Swift Package — an Xcode project file does not exist, and none is needed:
+To build manually instead:
 
 ```sh
-cd Dawnload
-swift build
-swift test
+swift run Dawnload                        # run from the terminal
+./Scripts/package-app.sh                  # or build a .app bundle
+open .build/Dawnload.app
 ```
 
-Run the app directly from the terminal:
+## Using Dawnload
 
-```sh
-swift run Dawnload
+1. Paste a URL, including `https://`.
+2. Choose the backend: `yt-dlp` for videos and playlists, `gallery-dl` for
+   galleries and image sets.
+3. Choose a quality option when using `yt-dlp`: Best, Compatible, or Audio.
+4. Leave **ffmpeg polish** enabled; it handles merging and keeps the output
+   compatible with most players.
+5. If a site returns HTTP 403, enable browser impersonation (Chrome 146 is the
+   default). If that isn't enough, export a `cookies.txt` file from your browser
+   and select it in Settings.
+6. Enable **Download playlist** when a URL can resolve to a playlist and you
+   want all items.
+7. Click **Download** to start immediately, or **Add** to put the URL in the
+   queue and download queued items in order.
+
+Keyboard shortcuts: Cmd+D downloads, Cmd+Shift+A adds to the queue,
+Cmd+Shift+S starts the queue, Cmd+O chooses a destination, Cmd+R refreshes tool
+detection.
+
+## Troubleshooting
+
+- **A tool shows "Not found"** — install it (`brew install yt-dlp gallery-dl
+  ffmpeg`) and click **Refresh** in the app.
+- **Downloads fail with HTTP 403** — enable browser impersonation, try a
+  different profile, then add `cookies.txt` from Settings, then update
+  `yt-dlp` (`brew upgrade yt-dlp`).
+- **Impersonation profiles are missing** — update or reinstall `yt-dlp`; the
+  profiles require a build with `curl_cffi` impersonation support. Check what
+  your install supports with `yt-dlp --list-impersonate-targets`.
+
+## Project layout
+
+```
+Package.swift                 Swift package manifest
+Sources/DawnloadCore/         URL normalization, metadata parsing, filename logic (no UI)
+Sources/Dawnload/             SwiftUI app: view model, download runner, tool detection
+Tests/DawnloadCoreTests/      Unit tests for DawnloadCore
+Scripts/package-app.sh        Builds .build/Dawnload.app
+Scripts/install.sh            One-command installer for end users
+Scripts/make-icon.swift       Generates the app icon
 ```
 
----
-
-## Where does the magic live?
-
-```
-Package.swift               Swift package manifest (macOS 13+, Swift 5.9+)
-Sources/DawnloadCore/       Testable URL normalization + smart filename logic
-Sources/Dawnload/           The SwiftUI app: view model, runner, tools, UI
-Tests/DawnloadCoreTests/    Regression tests for the Core logic
-Scripts/package-app.sh      Builds .build/Dawnload.app with icon + Info.plist
-Scripts/install.sh          The one-command installer humans actually use
-```
-
-The architecture is deliberately `Core + App`:
-
-- **DawnloadCore** is pure Swift, no UI — easy to unit test, easy to grow.
-- **Dawn** (the app) shells out to `yt-dlp` / `gallery-dl` / `ffmpeg` and parses their
-  progress metadata to keep you informed — no wrappers, no web APIs, no middlemen we
-  don't own.
-
----
+Logic that does not need a window lives in `DawnloadCore` so it can be unit
+tested on any CI runner.
 
 ## Contributing
 
-We built Dawnload on the shoulders of the open-source community, and we are set.
-Pull requests are welcome, issues are celebrated, and no contribution is too small —
-docs, typos, tests, new extractors, UI polish.
+Pull requests and issues are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for setup instructions and the contribution workflow, and please read
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-Start here: **[CONTRIBUTING.md](CONTRIBUTING.md)**
+## Acknowledgements
 
-Also read our **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** — kindness is the compile-time default.
+Dawnload wraps three open source projects:
 
----
-
-## Built on open shoulders
-
-Dawnload literally could not exist without the people who pour their weekends into:
-
-- **yt-dlp** — the YouTube-dl successor, a dozen communities of extractors. [link](https://github.com/yt-dlp/yt-dlp)
-- **gallery-dl** — the gallery and social-media workhorse. [link](https://github.com/mikf/gallery-dl)
-- **ffmpeg** — the tool that does everything on every platform. [link](https://ffmpeg.org)
-
-Rise and shine — the web is yours. Dawn Labs.
-
----
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — video and playlist extraction
+- [gallery-dl](https://github.com/mikf/gallery-dl) — gallery and social media extraction
+- [ffmpeg](https://ffmpeg.org) — media processing
 
 ## License
 
-[`MIT`](LICENSE) © 2026 Dawn Labs and Dawnload contributors.
+MIT. See [LICENSE](LICENSE).
 
-Please download the web responsibly — only media you have the right to keep, and respect
-site terms, creators, and rate limits. Dawn is a tool; you are the user.
+Only download media you have the right to access, and respect site terms and
+creators' permissions.

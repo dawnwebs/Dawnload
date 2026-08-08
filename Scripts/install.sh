@@ -130,7 +130,7 @@ install_to_applications() {
   cp -R "$ROOT/.build/${APP_NAME}.app" "$APP_ATLAS"
   ok "Installed to $APP_ATLAS"
   info "First launch: right-click the app and choose 'Open' the first time"
-  info "(This is macOS Gatekeeper, not a problem with Dawn — Apple is still getting to know us.)"
+  info "(Required once because the app is not notarized yet)"
 }
 
 die() { printf "\033[1;31mError: %s\033[0m\n" "$*" >&2; exit 1; }
