@@ -65,7 +65,13 @@ final class YTDlpProgressTests: XCTestCase {
 
     func testPlaylistProgressCountsEntries() throws {
         var tracker = YTDlpProgressTracker()
-        _ = tracker.consume(.parse(#"__DAWNLOAD_ITEM__{"title": "Part 3", "playlist_index": 3, "n_entries": 4, "format_id": "18", "filesize": 100}"#))
+        let line = YTDlpLine.parse(#"__DAWNLOAD_ITEM__{"title": "Part 3", "playlist_index": 3, "n_entries": 4, "playlist_title": "Open Movies", "format_id": "18", "filesize": 100}"#)
+        if case .item(let info) = line {
+            XCTAssertEqual(info.itemTitle, "Open Movies")
+        } else {
+            XCTFail("not an item line")
+        }
+        _ = tracker.consume(line)
         let sample = try XCTUnwrap(tracker.consume(.parse("__DAWNLOAD_PROGRESS__50 100 NA 10 NA 18 downloading")))
         XCTAssertEqual(try XCTUnwrap(sample.fraction), (2 + 0.5) / 4, accuracy: 0.0001)
         XCTAssertEqual(sample.entryIndex, 3)

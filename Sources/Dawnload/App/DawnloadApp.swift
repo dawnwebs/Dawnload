@@ -44,8 +44,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+    /// Quitting pauses what's running; say so first.
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model = Self.model, !model.isDemo else { return .terminateNow }
+        let running = model.items.filter { $0.status.isActive }.count
+        guard running > 0 else { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = running == 1 ? "1 download is running." : "\(running) downloads are running."
+        alert.informativeText = "Quitting pauses them. They continue from where they stopped when you resume them."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     @MainActor
@@ -111,7 +121,6 @@ struct DawnloadCommands: Commands {
             Button("Remove") {
                 if let selected { model.remove([selected.id]) }
             }
-            .keyboardShortcut(.delete, modifiers: .command)
             .disabled(selected == nil)
 
             Divider()

@@ -127,7 +127,7 @@ private final class YTDlpJob: DownloadJob {
             switch parsed {
             case .item(let info):
                 _ = tracker.consume(parsed)
-                if let title = info.title { emit(.title(title)) }
+                if let title = info.itemTitle { emit(.title(title)) }
                 if let index = info.playlistIndex, let count = info.entryCount {
                     emit(.log("Video \(index) of \(count): \(info.title ?? info.id ?? "")"))
                 }

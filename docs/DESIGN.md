@@ -375,7 +375,7 @@ end with a full stop, and the app name is **Dawnload**.
 | ⌘R | Check Tools Again |
 | ⇧⌘R | Show in Finder (selected) |
 | ⌘Return | Retry or Resume (selected) |
-| ⌘⌫ / Delete | Remove (selected) |
+| Delete | Remove (selected row) |
 | ⌥⌘I | Show or hide the inspector |
 | ⌘1 – ⌘5 | All, Active, Up next, Kept, Failed |
 | ⌘, | Settings |

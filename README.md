@@ -102,7 +102,7 @@ Keyboard shortcuts:
 | Cmd+Shift+S / Cmd+. | Start Queue / Pause All |
 | Cmd+Return | Open, Pause, Resume or Retry the selected item |
 | Cmd+Shift+R | Show the selected item in Finder |
-| Cmd+Delete | Remove the selected item |
+| Delete | Remove the selected item (in the list) |
 | Cmd+L | Focus the link field |
 | Cmd+Shift+O | Choose the download folder |
 | Cmd+R | Check tools again |

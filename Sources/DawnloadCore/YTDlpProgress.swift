@@ -11,7 +11,7 @@ public enum YTDlpMarkers {
     /// The yt-dlp arguments that make it print the lines `YTDlpLine.parse` reads.
     public static var arguments: [String] {
         [
-            "--print", "before_dl:\(item)%(.{id,title,playlist_index,n_entries,format_id,filesize,filesize_approx})j",
+            "--print", "before_dl:\(item)%(.{id,title,playlist_index,n_entries,playlist_title,format_id,filesize,filesize_approx})j",
             "--print", "before_dl:\(parts)%(requested_formats.:.{format_id,filesize,filesize_approx})j",
             "--progress-template",
             "download:\(progress)%(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.speed)s %(progress.eta)s %(info.format_id)s %(progress.status)s",
@@ -27,16 +27,18 @@ public struct YTDlpItemInfo: Decodable, Equatable {
     public var title: String?
     public var playlistIndex: Int?
     public var entryCount: Int?
+    public var playlistTitle: String?
     public var formatID: String?
     public var filesize: Int64?
     public var filesizeApprox: Int64?
 
     public init(id: String? = nil, title: String? = nil, playlistIndex: Int? = nil, entryCount: Int? = nil,
-                formatID: String? = nil, filesize: Int64? = nil, filesizeApprox: Int64? = nil) {
+                playlistTitle: String? = nil, formatID: String? = nil, filesize: Int64? = nil, filesizeApprox: Int64? = nil) {
         self.id = id
         self.title = title
         self.playlistIndex = playlistIndex
         self.entryCount = entryCount
+        self.playlistTitle = playlistTitle
         self.formatID = formatID
         self.filesize = filesize
         self.filesizeApprox = filesizeApprox
@@ -46,12 +48,21 @@ public struct YTDlpItemInfo: Decodable, Equatable {
         case id, title
         case playlistIndex = "playlist_index"
         case entryCount = "n_entries"
+        case playlistTitle = "playlist_title"
         case formatID = "format_id"
         case filesize
         case filesizeApprox = "filesize_approx"
     }
 
     public var expectedSize: Int64? { filesize ?? filesizeApprox }
+
+    /// The item's title: the playlist's name for a playlist, the video's otherwise.
+    public var itemTitle: String? {
+        if let entryCount, entryCount > 1, let playlistTitle, !playlistTitle.isEmpty {
+            return playlistTitle
+        }
+        return title
+    }
 }
 
 public struct YTDlpPart: Decodable, Equatable {
