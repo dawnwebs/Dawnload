@@ -212,8 +212,8 @@ two controls.
   Hover actions are shortcuts for the context menu, never the only way: every
   one is also in the context menu and the Download menu.
 - **Selection** is the system list selection with our look: `raised` fill and
-  the spine. Return on a Kept row opens the file; Delete removes the row (and
-  stops it, if it runs); Space toggles the inspector.
+  the spine. Double-click or Return opens a Kept file, or the inspector for
+  anything else; Delete removes the row (and stops it, if it runs).
 
 ### Inspector
 

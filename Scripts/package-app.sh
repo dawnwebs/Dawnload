@@ -21,8 +21,12 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$BUILD_DIR/release/$APP_NAME" "$MACOS_DIR/$APP_NAME"
 
+# The bundled OFL fonts (Unbounded, Martian Mono). FontRegistry looks in Contents/Resources/Fonts.
+cp -R "$ROOT/Sources/Dawnload/Resources/Fonts" "$RESOURCES_DIR/Fonts"
+
+# The app icon from the brand kit (docs/brand/app-icon/, green colourway).
 if command -v iconutil >/dev/null 2>&1; then
-  xcrun swift "$ROOT/Scripts/make-icon.swift" "$ICONSET_DIR"
+  xcrun swift "$ROOT/Scripts/make-icon.swift" "$ICONSET_DIR" "$ROOT/docs/brand/app-icon/png"
   iconutil -c icns "$ICONSET_DIR" -o "$RESOURCES_DIR/AppIcon.icns"
   rm -rf "$ICONSET_DIR"
 fi

@@ -14,7 +14,8 @@ let package = Package(
         .target(name: "DawnloadCore"),
         .executableTarget(
             name: "Dawnload",
-            dependencies: ["DawnloadCore"]
+            dependencies: ["DawnloadCore"],
+            resources: [.copy("Resources/Fonts")]
         ),
         .testTarget(
             name: "DawnloadCoreTests",
