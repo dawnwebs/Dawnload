@@ -1,0 +1,5 @@
+fonttools
+uharfbuzz
+skia-pathops
+resvg_py
+pillow

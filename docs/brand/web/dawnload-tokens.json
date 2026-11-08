@@ -1,0 +1,37 @@
+{
+  "colourway": "green",
+  "names": {
+    "brand": "Signal",
+    "brand_text": "Signal",
+    "accent": "Signal",
+    "accent_ink": "Forest",
+    "night": "Pine",
+    "surface": "Grove",
+    "line": "Moss line",
+    "haze": "Sage",
+    "paper": "Paper",
+    "sand": "Dew",
+    "smoke": "Lichen",
+    "ink": "Ink",
+    "failed": "Coral",
+    "failed_ink": "Coral deep"
+  },
+  "color": {
+    "brand": "#17D36E",
+    "brand_text": "#17D36E",
+    "brand_ink": "#0B7A3E",
+    "on_brand": "#07140E",
+    "accent": "#17D36E",
+    "accent_ink": "#0B7A3E",
+    "night": "#07140E",
+    "surface": "#0F2219",
+    "line": "#1B3428",
+    "haze": "#9DC4AE",
+    "paper": "#F2F8F3",
+    "sand": "#DCE9DF",
+    "smoke": "#4C6B5A",
+    "ink": "#07140E",
+    "failed": "#FF6B5C",
+    "failed_ink": "#B8261A"
+  }
+}
