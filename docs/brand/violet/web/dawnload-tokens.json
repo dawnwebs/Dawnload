@@ -1,0 +1,37 @@
+{
+  "colourway": "violet",
+  "names": {
+    "brand": "Violet",
+    "brand_text": "Lilac",
+    "accent": "Volt",
+    "accent_ink": "Moss",
+    "night": "Night",
+    "surface": "Dusk",
+    "line": "Seam",
+    "haze": "Haze",
+    "paper": "Paper",
+    "sand": "Mist",
+    "smoke": "Smoke",
+    "ink": "Ink",
+    "failed": "Coral",
+    "failed_ink": "Coral deep"
+  },
+  "color": {
+    "brand": "#6622D1",
+    "brand_text": "#B795FF",
+    "brand_ink": "#6622D1",
+    "on_brand": "#F5F0FD",
+    "accent": "#C8FF2E",
+    "accent_ink": "#3E6B00",
+    "night": "#0D0720",
+    "surface": "#1A0F38",
+    "line": "#2C1D55",
+    "haze": "#B9A6E0",
+    "paper": "#F5F0FD",
+    "sand": "#E3D9F5",
+    "smoke": "#5E4E86",
+    "ink": "#1E0F3D",
+    "failed": "#FF6B6B",
+    "failed_ink": "#C0262D"
+  }
+}

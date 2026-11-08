@@ -14,7 +14,8 @@ Developed in the open by Dawn Labs. MIT licensed.
 ## Features
 
 - Downloads videos and media from any URL supported by `yt-dlp` or `gallery-dl`
-- Switch between backends inside the app
+- Picks the engine for you (Auto: `gallery-dl` for gallery sites, `yt-dlp` for
+  the rest), or lets you choose
 - Quality options for `yt-dlp`: Best, Compatible (prefers MP4/M4A), and Audio (M4A)
 - `ffmpeg` polish: merging, remuxing, metadata embedding, and a final faststart pass
 - Browser impersonation for sites that reject normal requests (Chrome 146/145/142,
@@ -23,7 +24,11 @@ Developed in the open by Dawn Labs. MIT licensed.
 - Smart filenames: prefers meaningful page titles, falls back to URL slugs, and
   never overwrites existing files (duplicates get a `Title 2.mp4` suffix)
 - Playlist toggle for URLs that resolve to a single video or a playlist
-- A queue that downloads multiple URLs in order; each item keeps its own options
+- One list that is also the queue: items download in order, can be reordered,
+  paused and resumed (from their partial files), retried, and each keeps its own
+  options. The list is saved between launches
+- Real progress across video and audio parts and playlist entries, with size,
+  speed and time left, and a per-item log of what the tool did
 - Finds `yt-dlp`, `gallery-dl`, and `ffmpeg` in `/opt/homebrew/bin`,
   `/usr/local/bin`, and the app's `PATH`
 
@@ -72,28 +77,49 @@ open .build/Dawnload.app
 
 ## Using Dawnload
 
-1. Paste a URL, including `https://`.
-2. Choose the backend: `yt-dlp` for videos and playlists, `gallery-dl` for
-   galleries and image sets.
-3. Choose a quality option when using `yt-dlp`: Best, Compatible, or Audio.
-4. Leave **ffmpeg polish** enabled; it handles merging and keeps the output
-   compatible with most players.
-5. If a site returns HTTP 403, enable browser impersonation (Chrome 146 is the
-   default). If that isn't enough, export a `cookies.txt` file from your browser
-   and select it in Settings.
-6. Enable **Download playlist** when a URL can resolve to a playlist and you
-   want all items.
-7. Click **Download** to start immediately, or **Add** to put the URL in the
-   queue and download queued items in order.
+1. Paste a link, including `https://`. The line under the field says which
+   engine will download it.
+2. The chips under the field set how the next download runs, and they stick:
+   format (Best, Compatible, Audio only), engine (Auto, `yt-dlp`,
+   `gallery-dl`), **Polish** (ffmpeg merging, remuxing and faststart),
+   **Playlist**, browser impersonation, `cookies.txt`, and the folder.
+3. If a site returns HTTP 403, turn on impersonation (Chrome 146 first). If
+   that isn't enough, export a `cookies.txt` from your browser and choose it in
+   Settings › Access.
+4. Press Return (or **Download**) to start now, or Option-Return to add the
+   link to the queue and start it later with **Start Queue**.
+5. Select an item to see its files, options and log in the inspector. Hover a
+   row for Show in Finder, Pause, Resume or Retry; everything is also in the
+   context menu and the Download menu.
 
-Keyboard shortcuts: Cmd+D downloads, Cmd+Shift+A adds to the queue,
-Cmd+Shift+S starts the queue, Cmd+O chooses a destination, Cmd+R refreshes tool
-detection.
+Keyboard shortcuts:
+
+| Shortcut | Action |
+|---|---|
+| Return or Cmd+D | Download now |
+| Option-Return or Cmd+Shift+A | Add to Queue |
+| Cmd+Shift+V | Paste and Download |
+| Cmd+Shift+S / Cmd+. | Start Queue / Pause All |
+| Cmd+Return | Open, Pause, Resume or Retry the selected item |
+| Cmd+Shift+R | Show the selected item in Finder |
+| Delete | Remove the selected item (in the list) |
+| Cmd+L | Focus the link field |
+| Cmd+Shift+O | Choose the download folder |
+| Cmd+R | Check tools again |
+| Option-Cmd+I | Show or hide the inspector |
+| Cmd+1 to Cmd+5 | All, Active, Up next, Kept, Failed |
+
+From the command line, `open -a Dawnload --args <link>` adds a link and
+downloads it.
+
+The design language (colours, type, the status glyphs, states, voice) is in
+[docs/DESIGN.md](docs/DESIGN.md); the brand kit is in
+[docs/brand/](docs/brand/README.md).
 
 ## Troubleshooting
 
 - **A tool shows "Not found"** — install it (`brew install yt-dlp gallery-dl
-  ffmpeg`) and click **Refresh** in the app.
+  ffmpeg`) and click **Check Again** (Cmd+R) in the app.
 - **Downloads fail with HTTP 403** — enable browser impersonation, try a
   different profile, then add `cookies.txt` from Settings, then update
   `yt-dlp` (`brew upgrade yt-dlp`).
@@ -105,12 +131,22 @@ detection.
 
 ```
 Package.swift                 Swift package manifest
-Sources/DawnloadCore/         URL normalization, metadata parsing, filename logic (no UI)
-Sources/Dawnload/             SwiftUI app: view model, download runner, tool detection
+Sources/DawnloadCore/         Sources (links, magnets, .torrent), yt-dlp progress, failures,
+                              metadata, filenames, formatting (no UI)
+Sources/Dawnload/App/         The app scene, menus and shortcuts
+Sources/Dawnload/Design/      Brand tokens, the Cut D, the wordmark, shared components
+Sources/Dawnload/Engine/      DownloadEngine and its jobs: yt-dlp, gallery-dl, the torrent seam
+Sources/Dawnload/Model/       Items, options, the queue (AppModel), persistence, demo data
+Sources/Dawnload/Views/       Window, intake, list, rows, inspector, first run, Settings
+Sources/Dawnload/Resources/   Unbounded and Martian Mono (SIL OFL)
 Tests/DawnloadCoreTests/      Unit tests for DawnloadCore
 Scripts/package-app.sh        Builds .build/Dawnload.app
 Scripts/install.sh            One-command installer for end users
-Scripts/make-icon.swift       Generates the app icon
+Scripts/make-icon.swift       Builds the app icon from docs/brand/app-icon/
+
+To review every state without downloading anything, run
+`swift run Dawnload -DawnloadDemo YES` (add `-DawnloadTorrents YES` for the
+torrent states, `-appearance light` for Paper).
 ```
 
 Logic that does not need a window lives in `DawnloadCore` so it can be unit

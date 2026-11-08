@@ -21,3 +21,24 @@ and this project will follow [Semantic Versioning](https://semver.org/spec/v2.0.
 - `Scripts/install.sh` one-command installer with Homebrew + toolchain checks
 - `Scripts/package-app.sh` native `.app` packaging with generated icon
 - Core test suite for URL sanitizing, metadata parsing, and smart filenames
+- The redesign on the brand kit (docs/DESIGN.md): Pine and Paper themes, the Cut D
+  status glyphs with progress filling the D, the paste field with a detection line,
+  sticky option chips, one grouped list with filters, an inspector with files,
+  options and per-item log, first run, missing-tools setup, and native Settings
+- Pause and resume from partial files, retry, reorder, and a list saved between launches
+- Progress across video and audio parts and playlist entries, with speed and time left
+- Errors that say what happened and what to do
+- Engine Auto: gallery-dl for gallery sites, yt-dlp for the rest
+- A `DownloadEngine` seam with a torrent placeholder: magnet links and `.torrent` files
+  are recognised, and items model files, per-file selection, swarm stats and seeding
+- Links passed on the command line are downloaded
+- The app icon from docs/brand/app-icon/, and Unbounded and Martian Mono bundled (SIL OFL)
+
+### Changed
+
+- The Playlist toggle passes `--no-playlist` when off, so watch links that carry a list
+  download one video unless Playlist is on
+
+### Removed
+
+- The "wallpaper glass" appearance
