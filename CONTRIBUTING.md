@@ -21,8 +21,8 @@ The repo is a vanilla Swift Package — there is no Xcode project, `swift build`
 is all you need.
 
 ```
-Sources/DawnloadCore/       Pure logic: URL sanitizing, metadata parsing, filenames
-Sources/Dawnload/           SwiftUI app: view model, process runner, tool detection, UI
+Sources/DawnloadCore/       Pure logic: sources, yt-dlp progress, failures, filenames
+Sources/Dawnload/           SwiftUI app: design system, engines, model, views
 Tests/DawnloadCoreTests/    Unit tests for DawnloadCore
 Scripts/                    install.sh, package-app.sh, make-icon.swift
 ```
