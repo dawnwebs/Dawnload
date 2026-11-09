@@ -34,19 +34,20 @@ and the tool installers for those OSes haven't downloaded anything there.
 `crates/dawnload-ui`: the main window in Slint on the real update path, 500 demo items,
 measured. **Verdict: Slint confirmed** on macOS: 96 MB idle, 13.6% of one core while scrolling
 500 updating rows at full rate ([0008](adr/0008-slint-prototype-verdict.md)).
-Open: the same measurements on Windows and Linux (`Scripts/measure-ui.ps1`,
-`Scripts/measure-ui.sh`), and the owner's review of Slint's licence terms ([0009](adr/0009-licensing.md)).
+The owner confirmed Slint and its royalty-free licence on 2026-11-10 ([0009](adr/0009-licensing.md)).
+Open: the same measurements on Windows and Linux (`Scripts/measure-ui.ps1`, `Scripts/measure-ui.sh`).
 
 ## 3 · The full app, Windows first
 
-Gate: phase 2 numbers on Windows and Linux, and the licence review.
+Gate: phase 2 numbers on Windows and Linux.
 - Everything in DESIGN.md: chip menus, Settings (General, Access, Tools, Torrents), first run,
   empty and missing-tool states, drag to reorder, context menus, drop links and `.torrent` files,
   the loader animation, Reduce Motion, keyboard map, accessibility with Narrator, Orca, VoiceOver.
 - Tools screen on the tool manager: install, update, choose a custom path, the JS runtime.
 - Tray icon (Slint's system tray) with pause/resume and a quiet badge; close to tray.
 - Notifications on Kept and Failed; open file / show in folder per OS.
-- About window with Slint attribution.
+- **Required:** an About window that shows Slint's `AboutSlint` element. Without it the build
+  doesn't meet the Slint Royalty-free License's attribution term ([0009](adr/0009-licensing.md)).
 - Windows first (largest audience), then Linux (X11 and Wayland), then macOS parity, at which
   point the Swift app is retired.
 

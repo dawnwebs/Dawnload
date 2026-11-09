@@ -1,6 +1,6 @@
 # 0009 · Licensing of dependencies and tools
 
-Status: Accepted, **needs the owner's review** (2026-11-09)
+Status: Accepted (2026-11-09); Slint terms accepted by the owner on 2026-11-10 ("Yes, keep Slint")
 
 ## Context
 
@@ -39,7 +39,7 @@ without surprises.
 
 ## Consequences
 
-- **Owner to review:** whether the Slint royalty-free terms (attribution, the desktop-only scope)
-  are acceptable for Dawnload's distribution (winget, Flathub, Homebrew cask, a website). If not,
-  phase 3 should switch to the fallback before building more UI.
+- **Reviewed:** the owner accepted the Slint Royalty-free License 2.0 terms (attribution, desktop
+  scope) on 2026-11-10. The attribution is a release requirement: the About window shows
+  `AboutSlint` (roadmap phase 3).
 - `cargo deny` hasn't been run locally (not installed here); CI will run it.

@@ -1,6 +1,6 @@
 # 0008 · Slint prototype: measured, Slint confirmed
 
-Status: Accepted for macOS (2026-11-09); to be re-measured on Windows and Linux
+Status: Accepted, final (2026-11-10). The owner confirmed Slint, with its royalty-free licence (ADR 0009). Windows and Linux measurements are still to be recorded.
 
 ## Context
 
@@ -58,7 +58,7 @@ needs its own virtualization.
 
 ## Decision
 
-**Slint is confirmed** for the full UI (phase 3). It meets the idle target (96 MB footprint,
+**Slint is confirmed** for the full UI (phase 3), and the owner made this final on 2026-11-10. It meets the idle target (96 MB footprint,
 ~0% CPU) and scrolls 500 updating rows at full rate for ~14% of one core, on the real update
 path. Tauri stays the documented fallback.
 

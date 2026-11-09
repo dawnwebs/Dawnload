@@ -14,6 +14,6 @@ new record that supersedes the old one, rather than an edit.
 | [0006](0006-built-in-http-engine.md) | A built-in HTTP engine for plain files | Accepted |
 | [0007](0007-paste-anything-routing.md) | "Paste anything": routing and the detection line | Accepted |
 | [0008](0008-slint-prototype-verdict.md) | Slint prototype: measured, Slint confirmed | Accepted |
-| [0009](0009-licensing.md) | Licensing of dependencies and tools | Accepted, needs review |
+| [0009](0009-licensing.md) | Licensing of dependencies and tools | Accepted (owner, 2026-11-10) |
 
 Format: Context, Decision, Alternatives, Consequences. Keep each one under two pages.
