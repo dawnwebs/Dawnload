@@ -1,0 +1,20 @@
+[package]
+name = "dawnload-ui"
+description = "Dawnload's desktop app (Phase 2 prototype): Slint UI over dawnload-core."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "dawnload-app"
+path = "src/main.rs"
+
+[dependencies]
+dawnload-core.workspace = true
+tokio.workspace = true
+slint = "1.18"
+
+[build-dependencies]
+slint-build = "1.18"

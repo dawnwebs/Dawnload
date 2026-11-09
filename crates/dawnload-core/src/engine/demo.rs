@@ -89,7 +89,8 @@ impl DownloadEngine for DemoEngine {
 async fn run(engine: DemoEngine, request: JobRequest, ctx: JobContext) -> JobResult {
     let mut rng = Rng::new(request.item_id.0);
     let torrent = request.source.is_torrent();
-    let total = (rng.range(16.0, 22.0).exp2()) as u64 * if torrent { 64 } else { 8 }; // ~0.5 MB … ~270 MB, ×8/×64
+    // Web items 4 MB … 270 MB, torrents 32 MB … 2 GB: a few seconds to a few minutes each.
+    let total = (rng.range(16.0, 22.0).exp2()) as u64 * if torrent { 512 } else { 64 };
     let rate = rng.range(0.6e6, 9.0e6) * engine.time_scale;
     let fails_at = (rng.unit() < 0.04).then(|| rng.range(0.2, 0.8));
     let polishes = !torrent && rng.unit() < 0.5;
