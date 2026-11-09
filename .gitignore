@@ -8,3 +8,5 @@ DerivedData/
 *.app/
 *.dmg
 *.zip
+# Rust
+/target/
