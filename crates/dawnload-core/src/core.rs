@@ -287,8 +287,10 @@ impl Core {
         let tools_checked_at: i64 =
             reader.as_ref().and_then(|r| r.setting("tools_checked_at").ok().flatten()).and_then(|v| v.parse().ok()).unwrap_or(0);
 
+        // Ids are never reused, even after a remove, so `dawnload log 5` always means one item.
+        let stored_next: u64 = reader.as_ref().and_then(|r| r.setting("next_id").ok().flatten()).and_then(|v| v.parse().ok()).unwrap_or(1);
         let mut actor = Actor {
-            next_id: items.iter().map(|i| i.id.0).max().unwrap_or(0) + 1,
+            next_id: (items.iter().map(|i| i.id.0).max().unwrap_or(0) + 1).max(stored_next),
             order: items.iter().map(|i| i.id).collect(),
             items: HashMap::new(),
             logs: HashMap::new(),
@@ -628,6 +630,7 @@ impl Actor {
 
         let id = ItemId(self.next_id);
         self.next_id += 1;
+        self.store(vec![StoreOp::Setting { key: "next_id".into(), value: self.next_id.to_string() }]);
         let mut item = Item::new(id, source, options);
         item.engine = engine_id;
         self.items.insert(id, item);

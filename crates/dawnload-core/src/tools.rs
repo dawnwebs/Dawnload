@@ -727,7 +727,8 @@ async fn resolve(client: &reqwest::Client, plan: &ReleasePlan) -> Result<Release
             let mut downloads = Vec::new();
             let mut version = String::new();
             for (url, member, tool) in urls {
-                let response = no_redirect.head(url).send().await.map_err(|e| err(format!("Can't reach {url}: {e}")))?;
+                // GET, not HEAD: this server answers HEAD with 404 for some clients.
+                let response = no_redirect.get(url).send().await.map_err(|e| err(format!("Can't reach {url}: {e}")))?;
                 let location = response
                     .headers()
                     .get(reqwest::header::LOCATION)

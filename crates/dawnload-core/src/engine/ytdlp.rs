@@ -45,6 +45,10 @@ impl DownloadEngine for YtDlpEngine {
     }
 }
 
+/// Format sort for Compatible: H.264 first (so 4K AV1 never wins), then resolution, then AAC.
+/// Resolution must come before the audio codec, or a muxed 360p H.264+AAC stream wins.
+pub const COMPATIBLE_SORT: &str = "vcodec:h264,res,acodec:aac,ext:mp4:m4a";
+
 /// The yt-dlp command line for one item.
 pub fn arguments(url: &str, options: &Options, tools: &ToolSnapshot) -> Vec<String> {
     let ffmpeg = tools.path(ToolId::Ffmpeg);
@@ -70,13 +74,14 @@ pub fn arguments(url: &str, options: &Options, tools: &ToolSnapshot) -> Vec<Stri
             args.extend(["--ffmpeg-location".into(), ffmpeg.display().to_string()]);
             match options.quality {
                 Quality::Best => args.extend(["-f", "bv*+ba/b"].map(String::from)),
-                Quality::Compatible => args.extend(["-S", "res,ext:mp4:m4a", "-f", "bv*+ba/b"].map(String::from)),
+                // H.264 + AAC in MP4: plays on every OS, TV and phone. (`ext:mp4` alone can pick AV1.)
+                Quality::Compatible => args.extend(["-S", COMPATIBLE_SORT, "-f", "bv*+ba/b"].map(String::from)),
                 Quality::Audio => args.extend(["-x", "--audio-format", "m4a", "--audio-quality", "0"].map(String::from)),
             }
         }
         _ => match options.quality {
             Quality::Best | Quality::Audio => args.extend(["-f", "b"].map(String::from)),
-            Quality::Compatible => args.extend(["-S", "res,ext:mp4:m4a", "-f", "b"].map(String::from)),
+            Quality::Compatible => args.extend(["-S", COMPATIBLE_SORT, "-f", "b"].map(String::from)),
         },
     }
 
@@ -253,7 +258,7 @@ mod tests {
 
         let options = Options { quality: Quality::Compatible, polish: false, cookies: Cookies::File("/c.txt".into()), ..Options::default() };
         let text = joined(&arguments("https://x.test/v", &options, &tools(false)));
-        assert!(text.contains("-S res,ext:mp4:m4a -f b"));
+        assert!(text.contains("-S vcodec:h264,res,acodec:aac,ext:mp4:m4a -f b"));
         assert!(text.contains("--cookies /c.txt"));
         assert!(!text.contains("--merge-output-format"));
     }

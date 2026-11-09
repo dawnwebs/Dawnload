@@ -318,4 +318,10 @@ async fn nothing_is_lost_across_quit_and_crash() {
     }
     let core = Core::start(config(dir.path(), Lane::Web, log)).unwrap();
     assert_eq!(status(&core, waiting).await, Status::Paused, "running at the crash → Paused");
+    core.act(Action::Remove { ids: vec![waiting] }).await.unwrap();
+    core.shutdown().await;
+    let log = Arc::new(Mutex::new(Log::default()));
+    let core = Core::start(config(dir.path(), Lane::Web, log)).unwrap();
+    let fresh = add(&core, "slow-new", false).await;
+    assert!(fresh.0 > waiting.0, "ids are never reused ({fresh} after removing {waiting})");
 }
