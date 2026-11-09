@@ -60,8 +60,18 @@ impl DownloadEngine for Scripted {
             ctx.emit(JobEvent::Title(format!("{script} #{attempt}")));
             ctx.phase(Status::Pulling, None);
             let progress = |done: u64| {
-                ctx.emit(JobEvent::Transfer(Transfer { fraction: Some(done as f64 / 100.0), bytes_done: Some(done), bytes_total: Some(100), ..Transfer::default() }));
-                ctx.emit(JobEvent::Files(vec![ItemFile { path: format!("/tmp/{script}"), size: Some(100), bytes_done: Some(done), selected: true }]));
+                ctx.emit(JobEvent::Transfer(Transfer {
+                    fraction: Some(done as f64 / 100.0),
+                    bytes_done: Some(done),
+                    bytes_total: Some(100),
+                    ..Transfer::default()
+                }));
+                ctx.emit(JobEvent::Files(vec![ItemFile {
+                    path: format!("/tmp/{script}"),
+                    size: Some(100),
+                    bytes_done: Some(done),
+                    selected: true,
+                }]));
             };
             match script.split('-').next().unwrap() {
                 "ok" => {
@@ -69,7 +79,11 @@ impl DownloadEngine for Scripted {
                     tokio::time::sleep(Duration::from_millis(20)).await;
                     Ok(JobOutcome::default())
                 }
-                "fail" => Err(JobError::Failed(DownloadFailure::new(FailureKind::NotFound, "The page wasn't found (HTTP 404).", Some("Check the link.")))),
+                "fail" => Err(JobError::Failed(DownloadFailure::new(
+                    FailureKind::NotFound,
+                    "The page wasn't found (HTTP 404).",
+                    Some("Check the link."),
+                ))),
                 "panic" => panic!("engine bug"),
                 "net" if attempt == 1 => Err(JobError::Failed(DownloadFailure::network("reset"))),
                 "net" => Ok(JobOutcome::default()),
@@ -144,7 +158,10 @@ async fn until(core: &CoreHandle, what: &str, check: impl Fn(&HashMap<ItemId, St
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     let snapshot = core.snapshot().await.unwrap();
-    panic!("timed out waiting for {what}: {:?}", snapshot.items.iter().map(|i| (i.id, i.status, i.phase_detail.clone())).collect::<Vec<_>>());
+    panic!(
+        "timed out waiting for {what}: {:?}",
+        snapshot.items.iter().map(|i| (i.id, i.status, i.phase_detail.clone())).collect::<Vec<_>>()
+    );
 }
 
 #[tokio::test]
@@ -182,7 +199,8 @@ async fn seeding_frees_the_slot_and_stop_seeding_reaches_the_job() {
     let seed = add(&h.core, "seed", true).await;
     until(&h.core, "seeding", |s| s[&seed] == Status::Seeding).await;
     let next = add(&h.core, "slow", true).await;
-    until(&h.core, "the next item runs beside the seeding one", |s| s[&next] == Status::Pulling && s[&seed] == Status::Seeding).await;
+    until(&h.core, "the next item runs beside the seeding one", |s| s[&next] == Status::Pulling && s[&seed] == Status::Seeding)
+        .await;
     let view = h.core.snapshot().await.unwrap().items.into_iter().find(|i| i.id == seed).unwrap();
     assert_eq!(view.swarm.unwrap().peers, 3);
     assert!(view.finished_at.is_some(), "files are kept while it seeds");
@@ -288,7 +306,10 @@ async fn nothing_is_lost_across_quit_and_crash() {
     let (running, waiting, kept);
     {
         let core = Core::start(config(dir.path(), Lane::Web, log.clone())).unwrap();
-        assert!(matches!(Core::start(config(dir.path(), Lane::Web, log.clone())), Err(dawnload_core::CoreError::AlreadyRunning(_))));
+        assert!(matches!(
+            Core::start(config(dir.path(), Lane::Web, log.clone())),
+            Err(dawnload_core::CoreError::AlreadyRunning(_))
+        ));
         kept = add(&core, "ok", true).await;
         until(&core, "kept", |s| s[&kept] == Status::Kept).await;
         running = add(&core, "slow", true).await;

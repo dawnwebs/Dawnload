@@ -50,10 +50,10 @@ impl ItemInfo {
 
     /// The item's title: the playlist's name for a playlist, the video's otherwise.
     pub fn item_title(&self) -> Option<&str> {
-        if self.entry_count.is_some_and(|n| n > 1) {
-            if let Some(name) = self.playlist_title.as_deref().filter(|t| !t.is_empty()) {
-                return Some(name);
-            }
+        if self.entry_count.is_some_and(|n| n > 1)
+            && let Some(name) = self.playlist_title.as_deref().filter(|t| !t.is_empty())
+        {
+            return Some(name);
         }
         self.title.as_deref()
     }
@@ -89,7 +89,11 @@ pub enum YtDlpLine {
     Parts(Vec<Part>),
     Progress(ProgressLine),
     /// A postprocessor started or finished. `is_polish` is false for yt-dlp's own file moves.
-    Postprocess { started: bool, name: String, is_polish: bool },
+    Postprocess {
+        started: bool,
+        name: String,
+        is_polish: bool,
+    },
     Metadata(Box<SmartFilenameMetadata>),
     Text(String),
 }
@@ -133,7 +137,11 @@ impl YtDlpLine {
         }
         if let Some(p) = payload(line, POST) {
             let Some((status, name)) = p.split_once(' ') else { return YtDlpLine::Text(line.to_string()) };
-            return YtDlpLine::Postprocess { started: status == "started", name: name.to_string(), is_polish: name != "MoveFiles" };
+            return YtDlpLine::Postprocess {
+                started: status == "started",
+                name: name.to_string(),
+                is_polish: name != "MoveFiles",
+            };
         }
         if let Some(p) = payload(line, METADATA) {
             return match serde_json::from_str::<SmartFilenameMetadata>(p) {
@@ -220,10 +228,10 @@ impl ProgressTracker {
     fn sample(&mut self, progress: &ProgressLine) -> Transfer {
         let key = progress.format_id.clone().unwrap_or_else(|| "_".into());
         let current_total = progress.total.or(progress.total_estimate).or_else(|| self.part_sizes.get(&key).copied());
-        if let Some(t) = current_total {
-            if !self.part_sizes.contains_key(&key) || progress.total.is_some() {
-                self.part_sizes.insert(key.clone(), t);
-            }
+        if let Some(t) = current_total
+            && (!self.part_sizes.contains_key(&key) || progress.total.is_some())
+        {
+            self.part_sizes.insert(key.clone(), t);
         }
         if !self.part_order.is_empty() && !self.part_order.contains(&key) {
             self.part_order.push(key.clone());
@@ -256,26 +264,27 @@ impl ProgressTracker {
             }
         } else if self.part_order.len() > 1 {
             // Sizes unknown for some parts: weight parts equally.
-            if let (Some(t), Some(index)) = (current_total, self.part_order.iter().position(|p| *p == key)) {
-                if t > 0 {
-                    let part = (current as f64 / t as f64).min(1.0);
-                    entry_fraction = Some((index as f64 + part) / self.part_order.len() as f64);
-                }
+            if let (Some(t), Some(index)) = (current_total, self.part_order.iter().position(|p| *p == key))
+                && t > 0
+            {
+                let part = (current as f64 / t as f64).min(1.0);
+                entry_fraction = Some((index as f64 + part) / self.part_order.len() as f64);
             }
         }
 
         let mut fraction = entry_fraction;
-        if let (Some(index), Some(count)) = (self.entry_index, self.entry_count) {
-            if count > 1 {
-                fraction = Some((index.saturating_sub(1) as f64 + entry_fraction.unwrap_or(0.0)) / count as f64);
-            }
+        if let (Some(index), Some(count)) = (self.entry_index, self.entry_count)
+            && count > 1
+        {
+            fraction = Some((index.saturating_sub(1) as f64 + entry_fraction.unwrap_or(0.0)) / count as f64);
         }
 
         let mut seconds_left = progress.eta;
-        if let (Some(speed), Some(d), Some(t)) = (progress.speed, done, total) {
-            if speed > 0.0 && t >= d {
-                seconds_left = Some(((t - d) as f64 / speed).round() as u64);
-            }
+        if let (Some(speed), Some(d), Some(t)) = (progress.speed, done, total)
+            && speed > 0.0
+            && t >= d
+        {
+            seconds_left = Some(((t - d) as f64 / speed).round() as u64);
         }
 
         Transfer {

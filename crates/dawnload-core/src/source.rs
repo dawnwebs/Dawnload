@@ -96,10 +96,9 @@ impl DownloadSource {
                 .display_name
                 .clone()
                 .unwrap_or_else(|| format!("Magnet {}", &magnet.info_hash[..12.min(magnet.info_hash.len())])),
-            DownloadSource::TorrentFile { path } => path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| file_name(path)),
+            DownloadSource::TorrentFile { path } => {
+                path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| file_name(path))
+            }
         }
     }
 }
@@ -184,7 +183,7 @@ impl MagnetLink {
                     if let Some(raw) = lower.strip_prefix("urn:btih:").map(|_| &value[9..]) {
                         hash = Some(if raw.len() == 40 { raw.to_ascii_lowercase() } else { raw.to_ascii_uppercase() });
                     } else if lower.starts_with("urn:btmh:") {
-                        hash = Some(lower[9..].to_string());
+                        hash = lower.strip_prefix("urn:btmh:").map(str::to_string);
                     }
                 }
                 "dn" if display_name.is_none() => {
@@ -266,28 +265,98 @@ impl EnginePreference {
 
 /// Sites where gallery-dl does the better job.
 const GALLERY_HOSTS: &[&str] = &[
-    "artstation.com", "behance.net", "bunkr.si", "danbooru.donmai.us", "deviantart.com", "e621.net",
-    "flickr.com", "gelbooru.com", "imgur.com", "kemono.su", "pinterest.com", "pixiv.net", "safebooru.org",
-    "wallhaven.cc", "500px.com", "tumblr.com",
+    "artstation.com",
+    "behance.net",
+    "bunkr.si",
+    "danbooru.donmai.us",
+    "deviantart.com",
+    "e621.net",
+    "flickr.com",
+    "gelbooru.com",
+    "imgur.com",
+    "kemono.su",
+    "pinterest.com",
+    "pixiv.net",
+    "safebooru.org",
+    "wallhaven.cc",
+    "500px.com",
+    "tumblr.com",
 ];
 
 /// Sites yt-dlp should always read, even when a path looks like a file.
 const MEDIA_SITES: &[&str] = &[
-    "youtube.com", "youtu.be", "vimeo.com", "twitch.tv", "tiktok.com", "x.com", "twitter.com", "facebook.com",
-    "dailymotion.com", "soundcloud.com", "bandcamp.com", "reddit.com", "bilibili.com", "instagram.com",
+    "youtube.com",
+    "youtu.be",
+    "vimeo.com",
+    "twitch.tv",
+    "tiktok.com",
+    "x.com",
+    "twitter.com",
+    "facebook.com",
+    "dailymotion.com",
+    "soundcloud.com",
+    "bandcamp.com",
+    "reddit.com",
+    "bilibili.com",
+    "instagram.com",
 ];
 
 /// File extensions that mean "this link is the file itself".
 const DIRECT_EXTENSIONS: &[&str] = &[
     // archives and disk images
-    "zip", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst", "iso", "img", "dmg", "bin",
+    "zip",
+    "7z",
+    "rar",
+    "tar",
+    "gz",
+    "tgz",
+    "bz2",
+    "xz",
+    "zst",
+    "iso",
+    "img",
+    "dmg",
+    "bin",
     // installers and packages
-    "exe", "msi", "msix", "appimage", "deb", "rpm", "pkg", "apk", "flatpakref", "snap",
+    "exe",
+    "msi",
+    "msix",
+    "appimage",
+    "deb",
+    "rpm",
+    "pkg",
+    "apk",
+    "flatpakref",
+    "snap",
     // documents
-    "pdf", "epub", "mobi", "cbz", "cbr",
+    "pdf",
+    "epub",
+    "mobi",
+    "cbz",
+    "cbr",
     // media served as plain files
-    "mp4", "m4v", "mkv", "webm", "mov", "avi", "mp3", "m4a", "flac", "wav", "ogg", "opus", "aac",
-    "jpg", "jpeg", "png", "gif", "webp", "avif", "heic", "tif", "tiff",
+    "mp4",
+    "m4v",
+    "mkv",
+    "webm",
+    "mov",
+    "avi",
+    "mp3",
+    "m4a",
+    "flac",
+    "wav",
+    "ogg",
+    "opus",
+    "aac",
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "avif",
+    "heic",
+    "tif",
+    "tiff",
 ];
 
 fn host_matches(host: &str, list: &[&str]) -> bool {

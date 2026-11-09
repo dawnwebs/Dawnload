@@ -38,7 +38,8 @@ impl DownloadEngine for GalleryDlEngine {
 }
 
 pub fn arguments(url: &str, options: &Options, ffmpeg_available: bool) -> Vec<String> {
-    let mut args: Vec<String> = vec!["--no-colors".into(), "--no-mtime".into(), "--destination".into(), options.destination.display().to_string()];
+    let mut args: Vec<String> =
+        vec!["--no-colors".into(), "--no-mtime".into(), "--destination".into(), options.destination.display().to_string()];
     if options.polish && ffmpeg_available {
         args.extend(["--ugoira".into(), "mp4".into()]);
     }
@@ -57,7 +58,8 @@ pub fn title_for(file: &Path, destination: &Path) -> String {
     let Some(folder) = file.parent() else { return file.display().to_string() };
     match folder.strip_prefix(destination) {
         Ok(relative) => {
-            let parts: Vec<String> = relative.components().take(2).map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+            let parts: Vec<String> =
+                relative.components().take(2).map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
             if parts.is_empty() { file.file_name().unwrap_or_default().to_string_lossy().into_owned() } else { parts.join(" / ") }
         }
         Err(_) => folder.file_name().unwrap_or_default().to_string_lossy().into_owned(),
@@ -110,10 +112,10 @@ async fn run(request: JobRequest, ctx: JobContext) -> JobResult {
     }
 
     let mut polished = 0;
-    if options.polish {
-        if let Some(ffmpeg) = &ffmpeg {
-            polished = finishing::polish(&files, ffmpeg, &tools.env, &ctx).await?;
-        }
+    if options.polish
+        && let Some(ffmpeg) = &ffmpeg
+    {
+        polished = finishing::polish(&files, ffmpeg, &tools.env, &ctx).await?;
     }
     Ok(JobOutcome { files, polished })
 }

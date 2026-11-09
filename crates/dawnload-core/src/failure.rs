@@ -136,20 +136,28 @@ impl DownloadFailure {
     }
 
     pub fn internal(detail: impl Into<String>) -> Self {
-        Self::new(FailureKind::Internal, "Something went wrong inside Dawnload.", Some("Retry, and report it if it happens again."))
-            .with_detail(detail)
+        Self::new(
+            FailureKind::Internal,
+            "Something went wrong inside Dawnload.",
+            Some("Retry, and report it if it happens again."),
+        )
+        .with_detail(detail)
     }
 
     /// From an HTTP status, for Dawnload's own downloader.
     pub fn http_status(status: u16) -> Self {
         match status {
-            401 => Self::new(FailureKind::SignInNeeded, "This needs you to be signed in.", Some("Add your cookies.txt in Settings.")),
+            401 => {
+                Self::new(FailureKind::SignInNeeded, "This needs you to be signed in.", Some("Add your cookies.txt in Settings."))
+            }
             403 => Self::new(
                 FailureKind::Forbidden,
                 "This site refused the request (HTTP 403).",
                 Some("Add your cookies.txt in Settings, or try yt-dlp from the Engine menu."),
             ),
-            404 | 410 => Self::new(FailureKind::NotFound, format!("The file wasn't found (HTTP {status})."), Some("Check the link.")),
+            404 | 410 => {
+                Self::new(FailureKind::NotFound, format!("The file wasn't found (HTTP {status})."), Some("Check the link."))
+            }
             408 | 429 | 500..=599 => Self::new(
                 FailureKind::Network,
                 format!("The server is busy (HTTP {status})."),
@@ -179,10 +187,22 @@ impl DownloadFailure {
             );
         }
         if has(&[
-            "sign in to confirm", "login required", "requires login", "log in to", "use --cookies", "private video",
-            "this video is private", "members-only", "authentication required", "http error 401",
+            "sign in to confirm",
+            "login required",
+            "requires login",
+            "log in to",
+            "use --cookies",
+            "private video",
+            "this video is private",
+            "members-only",
+            "authentication required",
+            "http error 401",
         ]) {
-            return make(FailureKind::SignInNeeded, "This needs you to be signed in.".into(), "Add your cookies.txt in Settings.");
+            return make(
+                FailureKind::SignInNeeded,
+                "This needs you to be signed in.".into(),
+                "Add your cookies.txt in Settings.",
+            );
         }
         if has(&["http error 404", "404: not found", "404 not found"]) {
             return make(FailureKind::NotFound, "The page wasn't found (HTTP 404).".into(), "Check the link.");
@@ -204,9 +224,16 @@ impl DownloadFailure {
             return failure;
         }
         if has(&[
-            "timed out", "connection reset", "connection refused", "temporary failure in name resolution",
-            "getaddrinfo failed", "name or service not known", "network is unreachable", "connection aborted",
-            "incompleteread", "remote end closed connection",
+            "timed out",
+            "connection reset",
+            "connection refused",
+            "temporary failure in name resolution",
+            "getaddrinfo failed",
+            "name or service not known",
+            "network is unreachable",
+            "connection aborted",
+            "incompleteread",
+            "remote end closed connection",
         ]) {
             return make(
                 FailureKind::Network,
@@ -220,11 +247,7 @@ impl DownloadFailure {
 }
 
 fn last_error_line(output: &str) -> Option<String> {
-    output
-        .lines()
-        .rev()
-        .find(|line| line.starts_with("ERROR:") || line.contains("[error]"))
-        .map(|line| line.trim().to_string())
+    output.lines().rev().find(|line| line.starts_with("ERROR:") || line.contains("[error]")).map(|line| line.trim().to_string())
 }
 
 #[cfg(test)]
@@ -234,7 +257,10 @@ mod tests {
     #[test]
     fn classifies_tool_output() {
         let kind = |tool, out| DownloadFailure::classify(tool, 1, out).kind;
-        assert_eq!(kind("yt-dlp", "ERROR: [generic] Unable to download webpage: HTTP Error 403: Forbidden"), FailureKind::Forbidden);
+        assert_eq!(
+            kind("yt-dlp", "ERROR: [generic] Unable to download webpage: HTTP Error 403: Forbidden"),
+            FailureKind::Forbidden
+        );
         assert_eq!(
             kind("yt-dlp", "ERROR: [youtube] x: Sign in to confirm you’re not a bot. Use --cookies-from-browser"),
             FailureKind::SignInNeeded
@@ -242,11 +268,16 @@ mod tests {
         assert_eq!(kind("yt-dlp", "ERROR: Unsupported URL: https://example.com"), FailureKind::UnsupportedSite);
         assert_eq!(kind("yt-dlp", "ERROR: unable to download video data: <urlopen error timed out>"), FailureKind::Network);
         assert_eq!(
-            kind("yt-dlp", "WARNING: [youtube] No supported JavaScript runtime could be found.\nERROR: x: Requested format is not available"),
+            kind(
+                "yt-dlp",
+                "WARNING: [youtube] No supported JavaScript runtime could be found.\nERROR: x: Requested format is not available"
+            ),
             FailureKind::JsRuntimeNeeded
         );
         assert_eq!(
-            DownloadFailure::classify("gallery-dl", 64, "[gallery-dl][error] No suitable extractor found for 'https://x'").hint.as_deref(),
+            DownloadFailure::classify("gallery-dl", 64, "[gallery-dl][error] No suitable extractor found for 'https://x'")
+                .hint
+                .as_deref(),
             Some("Try yt-dlp for video and audio.")
         );
 

@@ -42,7 +42,9 @@ pub fn snapshot(dir: &Path, extensions: &[&str]) -> HashSet<PathBuf> {
 pub async fn polish(files: &[PathBuf], ffmpeg: &Path, env: &[(String, String)], ctx: &JobContext) -> Result<u32, JobError> {
     let candidates: Vec<&PathBuf> = files
         .iter()
-        .filter(|f| f.extension().is_some_and(|e| ["mp4", "m4v", "mov"].contains(&e.to_string_lossy().to_ascii_lowercase().as_str())))
+        .filter(|f| {
+            f.extension().is_some_and(|e| ["mp4", "m4v", "mov"].contains(&e.to_string_lossy().to_ascii_lowercase().as_str()))
+        })
         .collect();
     let mut count = 0;
     for (index, file) in candidates.iter().enumerate() {

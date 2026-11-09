@@ -443,7 +443,9 @@ async fn follow(core: &CoreHandle, ids: Option<Vec<ItemId>>) -> bool {
                     status_line = false;
                 }
                 let detail = match item.status {
-                    Status::Kept | Status::Failed | Status::Paused | Status::Seeding => format!(" · {}", present::subline(item, None)),
+                    Status::Kept | Status::Failed | Status::Paused | Status::Seeding => {
+                        format!(" · {}", present::subline(item, None))
+                    }
                     _ => String::new(),
                 };
                 println!("[{id}] {:<9} {}{detail}", item.status.word(), item.title);
@@ -459,14 +461,12 @@ async fn follow(core: &CoreHandle, ids: Option<Vec<ItemId>>) -> bool {
         }
         first = false;
         let active: Vec<_> = watched.iter().filter_map(|id| mirror.item(*id)).filter(|i| i.status.is_active()).collect();
-        if tty {
-            if let Some(first) = active.first() {
-                let more = if active.len() > 1 { format!("  (+{} more)", active.len() - 1) } else { String::new() };
-                let line = format!("  {} · {}{more}", truncate(&first.title, 40), present::subline(first, None));
-                print!("\r\x1b[2K{line}");
-                let _ = std::io::stdout().flush();
-                status_line = true;
-            }
+        if tty && let Some(first) = active.first() {
+            let more = if active.len() > 1 { format!("  (+{} more)", active.len() - 1) } else { String::new() };
+            let line = format!("  {} · {}{more}", truncate(&first.title, 40), present::subline(first, None));
+            print!("\r\x1b[2K{line}");
+            let _ = std::io::stdout().flush();
+            status_line = true;
         }
 
         let done = match &ids {
@@ -483,11 +483,7 @@ async fn follow(core: &CoreHandle, ids: Option<Vec<ItemId>>) -> bool {
 }
 
 fn truncate(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        text.to_string()
-    } else {
-        format!("{}…", text.chars().take(max - 1).collect::<String>())
-    }
+    if text.chars().count() <= max { text.to_string() } else { format!("{}…", text.chars().take(max - 1).collect::<String>()) }
 }
 
 async fn tools(command: ToolsCommand, data_dir: &std::path::Path) -> Result<ExitCode, String> {
@@ -509,7 +505,9 @@ async fn tools(command: ToolsCommand, data_dir: &std::path::Path) -> Result<Exit
                 };
                 let update = match (&s.latest, s.update_available, s.origin) {
                     (Some(latest), true, Some(ToolOrigin::Managed)) => format!(" → {latest} available (`dawnload tools update`)"),
-                    (Some(latest), true, _) => format!(" → {latest} available (update it with your package manager, or install Dawnload's copy)"),
+                    (Some(latest), true, _) => {
+                        format!(" → {latest} available (update it with your package manager, or install Dawnload's copy)")
+                    }
                     (Some(_), false, Some(_)) => " · up to date".to_string(),
                     _ => String::new(),
                 };
@@ -518,7 +516,9 @@ async fn tools(command: ToolsCommand, data_dir: &std::path::Path) -> Result<Exit
             }
             let snapshot = manager.discover();
             match &snapshot.js_runtime {
-                Some(runtime) => println!("\nJavaScript runtime for YouTube: {} ({})", runtime.kind.ytdlp_name(), runtime.path.display()),
+                Some(runtime) => {
+                    println!("\nJavaScript runtime for YouTube: {} ({})", runtime.kind.ytdlp_name(), runtime.path.display())
+                }
                 None => println!("\nYouTube needs a JavaScript runtime and none was found: `dawnload tools install deno`."),
             }
         }
@@ -535,7 +535,10 @@ async fn tools(command: ToolsCommand, data_dir: &std::path::Path) -> Result<Exit
                 }
                 missing
             } else {
-                tools.iter().map(|t| ToolId::parse(t).ok_or(format!("“{t}” isn't a tool Dawnload knows."))).collect::<Result<_, _>>()?
+                tools
+                    .iter()
+                    .map(|t| ToolId::parse(t).ok_or(format!("“{t}” isn't a tool Dawnload knows.")))
+                    .collect::<Result<_, _>>()?
             };
             let mut failed = false;
             for tool in wanted {

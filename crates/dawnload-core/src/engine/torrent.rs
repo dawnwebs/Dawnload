@@ -29,7 +29,9 @@ impl DownloadEngine for TorrentEngine {
     fn accepts(&self, source: &DownloadSource) -> bool {
         match source {
             DownloadSource::Magnet(_) | DownloadSource::TorrentFile { .. } => true,
-            DownloadSource::Web { url } => url::Url::parse(url).ok().and_then(|u| crate::source::url_file_extension(&u)).as_deref() == Some("torrent"),
+            DownloadSource::Web { url } => {
+                url::Url::parse(url).ok().and_then(|u| crate::source::url_file_extension(&u)).as_deref() == Some("torrent")
+            }
         }
     }
 

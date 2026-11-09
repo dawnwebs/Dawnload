@@ -32,12 +32,21 @@ impl From<rusqlite::Error> for StoreError {
 
 #[derive(Clone, Debug)]
 pub enum StoreOp {
-    Upsert { item: Box<Item>, position: i64 },
+    Upsert {
+        item: Box<Item>,
+        position: i64,
+    },
     Delete(ItemId),
     /// The whole queue order.
     Order(Vec<ItemId>),
-    Log { id: ItemId, line: String },
-    Setting { key: String, value: String },
+    Log {
+        id: ItemId,
+        line: String,
+    },
+    Setting {
+        key: String,
+        value: String,
+    },
 }
 
 pub struct Store {
@@ -142,7 +151,8 @@ impl Store {
                     }
                     StoreOp::Log { id, line } => {
                         // Only for items that exist (a removed item's late lines are dropped).
-                        let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM items WHERE id = ?1)", [id.0 as i64], |r| r.get(0))?;
+                        let exists: bool =
+                            tx.query_row("SELECT EXISTS(SELECT 1 FROM items WHERE id = ?1)", [id.0 as i64], |r| r.get(0))?;
                         if exists {
                             log.execute(params![id.0 as i64, line])?;
                             logged.insert(*id);
@@ -196,10 +206,10 @@ impl StoreWriter {
                     while let Ok(more) = rx.try_recv() {
                         take(more);
                     }
-                    if !ops.is_empty() {
-                        if let Err(e) = store.apply(&ops) {
-                            eprintln!("dawnload: couldn't save state: {e}");
-                        }
+                    if !ops.is_empty()
+                        && let Err(e) = store.apply(&ops)
+                    {
+                        eprintln!("dawnload: couldn't save state: {e}");
                     }
                     for done in flushes {
                         let _ = done.send(());

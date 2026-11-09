@@ -204,7 +204,8 @@ pub fn cookie_header(cookies_txt: &str, url: &url::Url) -> Option<String> {
             }
             let domain = fields[0].to_ascii_lowercase();
             let bare = domain.trim_start_matches('.');
-            let domain_ok = host == bare || (fields[1].eq_ignore_ascii_case("TRUE") || domain.starts_with('.')) && host.ends_with(&format!(".{bare}"));
+            let domain_ok = host == bare
+                || (fields[1].eq_ignore_ascii_case("TRUE") || domain.starts_with('.')) && host.ends_with(&format!(".{bare}"));
             let path_ok = path.starts_with(fields[2]);
             let secure_ok = secure || !fields[3].eq_ignore_ascii_case("TRUE");
             (domain_ok && path_ok && secure_ok).then(|| format!("{}={}", fields[5], fields[6].trim_end()))
@@ -305,7 +306,8 @@ async fn worker(
     ranges: bool,
     stop: StopSignal,
 ) -> Result<WorkerExit, DownloadFailure> {
-    let mut file = tokio::fs::OpenOptions::new().write(true).open(&part).await.map_err(|e| DownloadFailure::internal(e.to_string()))?;
+    let mut file =
+        tokio::fs::OpenOptions::new().write(true).open(&part).await.map_err(|e| DownloadFailure::internal(e.to_string()))?;
     loop {
         let Some(index) = claim(&mut segments.lock().unwrap()) else { return Ok(WorkerExit::Done) };
         let mut attempt = 0;
@@ -326,13 +328,21 @@ async fn worker(
                 let response = builder.send().await.map_err(network)?;
                 let status = response.status();
                 if status == StatusCode::RANGE_NOT_SATISFIABLE {
-                    return Err(DownloadFailure::new(FailureKind::ServerChanged, "The file changed on the server.", Some("Retry to start it again.")));
+                    return Err(DownloadFailure::new(
+                        FailureKind::ServerChanged,
+                        "The file changed on the server.",
+                        Some("Retry to start it again."),
+                    ));
                 }
                 if !status.is_success() {
                     return Err(DownloadFailure::http_status(status.as_u16()));
                 }
                 if ranges && status != StatusCode::PARTIAL_CONTENT && pos > 0 {
-                    return Err(DownloadFailure::new(FailureKind::ServerChanged, "The server stopped resuming downloads.", Some("Retry to start it again.")));
+                    return Err(DownloadFailure::new(
+                        FailureKind::ServerChanged,
+                        "The server stopped resuming downloads.",
+                        Some("Retry to start it again."),
+                    ));
                 }
                 file.seek(std::io::SeekFrom::Start(pos)).await.map_err(|e| DownloadFailure::internal(e.to_string()))?;
                 let mut stream = response.bytes_stream();
@@ -478,14 +488,20 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
     }
 
     // Where it goes: the previous run's file if there's one to continue, else a fresh unique name.
-    let previous = request.files.first().map(|f| PathBuf::from(&f.path)).filter(|p| part_path(p).exists() && state_path(p).exists());
+    let previous =
+        request.files.first().map(|f| PathBuf::from(&f.path)).filter(|p| part_path(p).exists() && state_path(p).exists());
     let target = match previous {
         Some(p) => p,
         None => {
             let name = probe
                 .filename
                 .clone()
-                .or_else(|| parsed.path_segments().and_then(|mut s| s.next_back()).map(|s| percent_encoding::percent_decode_str(s).decode_utf8_lossy().into_owned()))
+                .or_else(|| {
+                    parsed
+                        .path_segments()
+                        .and_then(|mut s| s.next_back())
+                        .map(|s| percent_encoding::percent_decode_str(s).decode_utf8_lossy().into_owned())
+                })
                 .map(|n| filename::limited_component(&n, 200))
                 .filter(|n| !n.is_empty())
                 .unwrap_or_else(|| "download".into());
@@ -527,7 +543,15 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
     }
     let resumed = state.is_some() && part.exists();
     let mut segments = match (&state, resumed) {
-        (Some(saved), true) => saved.segments.iter().cloned().map(|mut s| { s.owned = false; s }).collect(),
+        (Some(saved), true) => saved
+            .segments
+            .iter()
+            .cloned()
+            .map(|mut s| {
+                s.owned = false;
+                s
+            })
+            .collect(),
         _ => match (probe.total, probe.ranges) {
             (Some(total), true) => split_into(total, options.connections.max(1) as u64),
             (Some(total), false) => vec![Segment { start: 0, end: total, pos: 0, owned: false }],
@@ -535,9 +559,12 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
         },
     };
     if !resumed {
-        let file = std::fs::File::create(&part).map_err(|e| DownloadFailure::folder_unavailable(&destination.display().to_string()).with_detail(e.to_string()))?;
+        let file = std::fs::File::create(&part)
+            .map_err(|e| DownloadFailure::folder_unavailable(&destination.display().to_string()).with_detail(e.to_string()))?;
         if let Some(total) = probe.total {
-            file.set_len(total).map_err(|e| DownloadFailure::folder_unavailable(&destination.display().to_string()).with_detail(e.to_string()))?;
+            file.set_len(total).map_err(|e| {
+                DownloadFailure::folder_unavailable(&destination.display().to_string()).with_detail(e.to_string())
+            })?;
         }
     }
     segments.retain(|s| s.pos < s.end || s.end == u64::MAX);
@@ -552,7 +579,8 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
         None => 0,
     };
     let downloaded = Arc::new(AtomicU64::new(initial_done));
-    let file_entry = |done: u64| ItemFile { path: target.display().to_string(), size: probe.total, bytes_done: Some(done), selected: true };
+    let file_entry =
+        |done: u64| ItemFile { path: target.display().to_string(), size: probe.total, bytes_done: Some(done), selected: true };
     ctx.emit(JobEvent::Files(vec![file_entry(initial_done)]));
     let connections = if resumable { (options.connections.max(1) as usize).max(1) } else { 1 };
     ctx.phase(Status::Pulling, None);
@@ -642,10 +670,10 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
         return Err(DownloadFailure::network("the server closed the connection early").into());
     }
     let written = downloaded.load(Ordering::Relaxed);
-    if probe.total.is_none() {
-        if let Ok(f) = std::fs::OpenOptions::new().write(true).open(&part) {
-            let _ = f.set_len(written);
-        }
+    if probe.total.is_none()
+        && let Ok(f) = std::fs::OpenOptions::new().write(true).open(&part)
+    {
+        let _ = f.set_len(written);
     }
 
     let expected = options.checksum.clone().or_else(|| fragment_checksum(&parsed)).or(probe.digest.clone());
@@ -661,7 +689,8 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
     }
 
     let final_path = if target.exists() { filename::unique_path(&target, &Default::default()) } else { target.clone() };
-    std::fs::rename(&part, &final_path).map_err(|e| DownloadFailure::folder_unavailable(&destination.display().to_string()).with_detail(e.to_string()))?;
+    std::fs::rename(&part, &final_path)
+        .map_err(|e| DownloadFailure::folder_unavailable(&destination.display().to_string()).with_detail(e.to_string()))?;
     let _ = std::fs::remove_file(&state_file);
     Ok(JobOutcome { files: vec![final_path], polished: 0 })
 }
@@ -695,13 +724,18 @@ pub(crate) mod test_server {
                     let mut read = 0;
                     loop {
                         let Ok(n) = socket.read(&mut buf[read..]).await else { return };
-                        if n == 0 { return; }
+                        if n == 0 {
+                            return;
+                        }
                         read += n;
-                        if buf[..read].windows(4).any(|w| w == b"\r\n\r\n") { break; }
+                        if buf[..read].windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
                     }
                     let text = String::from_utf8_lossy(&buf[..read]).to_string();
                     let head = text.starts_with("HEAD");
-                    let range = text.lines().find_map(|l| l.to_ascii_lowercase().strip_prefix("range: bytes=").map(str::to_string));
+                    let range =
+                        text.lines().find_map(|l| l.to_ascii_lowercase().strip_prefix("range: bytes=").map(str::to_string));
                     let total = body.len();
                     let (status, start, end) = match range.filter(|_| ranges) {
                         Some(r) => {
@@ -712,14 +746,27 @@ pub(crate) mod test_server {
                         }
                         None => ("200 OK", 0, total),
                     };
-                    let mut header = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nETag: \"v1\"\r\nContent-Disposition: attachment; filename=\"test file.bin\"\r\nConnection: close\r\n", end - start);
-                    if ranges { header.push_str("Accept-Ranges: bytes\r\n"); }
-                    if status.starts_with("206") { header.push_str(&format!("Content-Range: bytes {start}-{}/{total}\r\n", end - 1)); }
+                    let mut header = format!(
+                        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nETag: \"v1\"\r\nContent-Disposition: attachment; filename=\"test file.bin\"\r\nConnection: close\r\n",
+                        end - start
+                    );
+                    if ranges {
+                        header.push_str("Accept-Ranges: bytes\r\n");
+                    }
+                    if status.starts_with("206") {
+                        header.push_str(&format!("Content-Range: bytes {start}-{}/{total}\r\n", end - 1));
+                    }
                     header.push_str("\r\n");
-                    if socket.write_all(header.as_bytes()).await.is_err() || head { return; }
+                    if socket.write_all(header.as_bytes()).await.is_err() || head {
+                        return;
+                    }
                     for chunk in body[start..end].chunks(16 * 1024) {
-                        if socket.write_all(chunk).await.is_err() { return; }
-                        if delay_per_chunk_ms > 0 { tokio::time::sleep(std::time::Duration::from_millis(delay_per_chunk_ms)).await; }
+                        if socket.write_all(chunk).await.is_err() {
+                            return;
+                        }
+                        if delay_per_chunk_ms > 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(delay_per_chunk_ms)).await;
+                        }
                     }
                 });
             }
@@ -756,7 +803,10 @@ mod tests {
     #[test]
     fn helpers() {
         assert_eq!(content_disposition_filename("attachment; filename=\"a.zip\"").as_deref(), Some("a.zip"));
-        assert_eq!(content_disposition_filename("attachment; filename=\"a.zip\"; filename*=UTF-8''a%20b.zip").as_deref(), Some("a b.zip"));
+        assert_eq!(
+            content_disposition_filename("attachment; filename=\"a.zip\"; filename*=UTF-8''a%20b.zip").as_deref(),
+            Some("a b.zip")
+        );
         assert_eq!(base64_decode("aGVsbG8=").unwrap(), b"hello");
         let url = url::Url::parse(&format!("https://x.test/a.iso#sha256={}", "a".repeat(64))).unwrap();
         assert_eq!(fragment_checksum(&url).unwrap().hex, "a".repeat(64));
@@ -766,7 +816,9 @@ mod tests {
         let mut segments = split_into(10 * MIN_SPLIT, 4);
         assert_eq!(segments.len(), 4);
         assert_eq!(segments.last().unwrap().end, 10 * MIN_SPLIT);
-        for _ in 0..4 { claim(&mut segments).unwrap(); }
+        for _ in 0..4 {
+            claim(&mut segments).unwrap();
+        }
         let stolen = claim(&mut segments).unwrap();
         assert_eq!(segments.len(), 5);
         assert_eq!(segments[stolen].end, 10 * MIN_SPLIT);
@@ -778,7 +830,9 @@ mod tests {
         let ctx = JobContext::new(ItemId(1), 1, stop, tx);
         let result = HttpEngine::new().run(req, ctx).await;
         let mut events = Vec::new();
-        while let Ok((_, _, e)) = rx.try_recv() { events.push(e); }
+        while let Ok((_, _, e)) = rx.try_recv() {
+            events.push(e);
+        }
         (result, events)
     }
 

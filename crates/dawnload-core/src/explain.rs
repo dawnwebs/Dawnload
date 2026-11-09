@@ -73,7 +73,11 @@ pub fn explain(
                 EngineId::Direct => {
                     let name = url::Url::parse(url)
                         .ok()
-                        .and_then(|u| u.path_segments().and_then(|mut s| s.next_back()).map(|s| percent_encoding::percent_decode_str(s).decode_utf8_lossy().into_owned()))
+                        .and_then(|u| {
+                            u.path_segments()
+                                .and_then(|mut s| s.next_back())
+                                .map(|s| percent_encoding::percent_decode_str(s).decode_utf8_lossy().into_owned())
+                        })
                         .filter(|n| !n.is_empty());
                     let file = name.map(|n| format!(" · {n}")).unwrap_or_default();
                     let connections = options.connections.max(1);
@@ -81,14 +85,18 @@ pub fn explain(
                     (format!("{host}{file} · Dawnload will download this file directly{how}{auto}"), Tone::Neutral, true)
                 }
                 EngineId::YtDlp if is_youtube(&source) && tools.js_runtime.is_none() => (
-                    format!("{host} · yt-dlp will download this{auto}. YouTube needs a JavaScript runtime: install deno in Settings › Tools."),
+                    format!(
+                        "{host} · yt-dlp will download this{auto}. YouTube needs a JavaScript runtime: install deno in Settings › Tools."
+                    ),
                     Tone::Warning,
                     true,
                 ),
                 _ => (format!("{host} · {} will download this{auto}", engine_id.display_name()), Tone::Neutral, true),
             }
         }
-        (_, Availability::Ready) => (format!("{} · {} will download this", source.short_name(), engine_id.display_name()), Tone::Neutral, true),
+        (_, Availability::Ready) => {
+            (format!("{} · {} will download this", source.short_name(), engine_id.display_name()), Tone::Neutral, true)
+        }
     };
     Some(Explanation { text, tone, source: Some(source), engine: Some(engine_id), can_submit })
 }
@@ -134,11 +142,17 @@ mod tests {
         assert_eq!(e.text, "instagram.com · gallery-dl will download this (Auto)");
 
         let e = say("https://cdimage.example.org/releases/debian-13.iso", &tools(false)).unwrap();
-        assert_eq!(e.text, "cdimage.example.org · debian-13.iso · Dawnload will download this file directly over 4 connections (Auto)");
+        assert_eq!(
+            e.text,
+            "cdimage.example.org · debian-13.iso · Dawnload will download this file directly over 4 connections (Auto)"
+        );
         assert!(e.can_submit);
 
         let e = say("https://vimeo.com/1", &tools(false)).unwrap();
-        assert_eq!(e.text, "vimeo.com · yt-dlp isn't installed. Dawnload can install it for you: Settings › Tools, or `dawnload tools install`.");
+        assert_eq!(
+            e.text,
+            "vimeo.com · yt-dlp isn't installed. Dawnload can install it for you: Settings › Tools, or `dawnload tools install`."
+        );
         assert!(!e.can_submit);
 
         let e = say("magnet:?xt=urn:btih:c9e15763f722f23e98a29decdfae341b98d53056&dn=Ubuntu+24.04", &tools(true)).unwrap();

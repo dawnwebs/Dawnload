@@ -268,7 +268,13 @@ struct BridgeState {
     real: bool,
 }
 
-async fn bridge(core: CoreHandle, mut ui: mpsc::UnboundedReceiver<UiMessage>, apply: impl Fn(Frame), counters: Arc<Counters>, real: bool) {
+async fn bridge(
+    core: CoreHandle,
+    mut ui: mpsc::UnboundedReceiver<UiMessage>,
+    apply: impl Fn(Frame),
+    counters: Arc<Counters>,
+    real: bool,
+) {
     let _ = counters;
     let Some(mut sub) = core.subscribe().await else { return };
     let settings = core.settings().await.unwrap_or_default();
@@ -290,11 +296,10 @@ async fn bridge(core: CoreHandle, mut ui: mpsc::UnboundedReceiver<UiMessage>, ap
             update = sub.recv() => {
                 let Some(update) = update else { return };
                 let applied = state.mirror.apply(update);
-                if let Some(detail) = applied.detail {
-                    if Some(detail.item.id) == state.selected {
+                if let Some(detail) = applied.detail
+                    && Some(detail.item.id) == state.selected {
                         state.detail = Some(detail);
                     }
-                }
                 if applied.tools || !state.real {
                     frame.tools = Some(tools_pill(&state));
                 }
@@ -404,7 +409,9 @@ fn refresh(state: &mut BridgeState, frame: &mut Frame, structure: bool) {
     let mut item_rows = Vec::new();
     for row in &rows {
         built.push(match row {
-            Row::Header { section, count } => RowData { kind: 0, header: section.title().into(), count: *count as i32, ..RowData::default() },
+            Row::Header { section, count } => {
+                RowData { kind: 0, header: section.title().into(), count: *count as i32, ..RowData::default() }
+            }
             Row::Item { id, queue_position } => {
                 item_rows.push(*id);
                 let item = state.mirror.item(*id).expect("item in mirror");
@@ -435,7 +442,8 @@ fn refresh(state: &mut BridgeState, frame: &mut Frame, structure: bool) {
     state.item_rows = item_rows;
 
     let counts = &state.mirror.counts;
-    frame.filters = Some(FILTERS.iter().map(|f| FilterTab { title: f.title().into(), count: counts.for_filter(*f) as i32 }).collect());
+    frame.filters =
+        Some(FILTERS.iter().map(|f| FilterTab { title: f.title().into(), count: counts.for_filter(*f) as i32 }).collect());
     frame.queue_label = Some(
         if counts.active > 0 || state.mirror.queue.running {
             "Pause All"
@@ -463,7 +471,9 @@ fn inspector(state: &BridgeState) -> (InspectorData, Vec<FileRow>) {
     };
     let mut numbers = Vec::new();
     match (t.bytes_done, t.bytes_total) {
-        (Some(d), Some(total)) if item.status.is_active() || item.status == Status::Paused => numbers.push(format::bytes_of(d, total)),
+        (Some(d), Some(total)) if item.status.is_active() || item.status == Status::Paused => {
+            numbers.push(format::bytes_of(d, total))
+        }
         _ => {}
     }
     if item.status.is_active() {
@@ -562,7 +572,13 @@ fn tools_pill(state: &BridgeState) -> (String, bool) {
 
 fn open_folder(folder: Option<std::path::PathBuf>) {
     let Some(folder) = folder else { return };
-    let opener = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(windows) {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
     let _ = std::process::Command::new(opener).arg(folder).spawn();
 }
 

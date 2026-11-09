@@ -21,14 +21,14 @@ pub fn subline(item: &ItemView, queue_position: Option<usize>) -> String {
             parts.join(" · ")
         }
         Status::Pulling => {
-            if let (Some(index), Some(count)) = (t.entry_index, t.entry_count) {
-                if count > 1 {
-                    let mut parts = vec![format!("Video {index} of {count}")];
-                    if let Some(speed) = t.bytes_per_second {
-                        parts.push(format::speed(speed));
-                    }
-                    return parts.join(" · ");
+            if let (Some(index), Some(count)) = (t.entry_index, t.entry_count)
+                && count > 1
+            {
+                let mut parts = vec![format!("Video {index} of {count}")];
+                if let Some(speed) = t.bytes_per_second {
+                    parts.push(format::speed(speed));
                 }
+                return parts.join(" · ");
             }
             let mut parts = Vec::new();
             if let Some(fraction) = t.fraction {
@@ -45,10 +45,10 @@ pub fn subline(item: &ItemView, queue_position: Option<usize>) -> String {
             if let Some(left) = t.seconds_left {
                 parts.push(format::time_left(left));
             }
-            if item.source_kind != SourceKind::Web {
-                if let Some(swarm) = &item.swarm {
-                    parts.push(format::count(swarm.peers as usize, "peer"));
-                }
+            if item.source_kind != SourceKind::Web
+                && let Some(swarm) = &item.swarm
+            {
+                parts.push(format::count(swarm.peers as usize, "peer"));
             }
             if parts.is_empty() {
                 return item.phase_detail.clone().map(capitalize).unwrap_or_else(|| "Starting".into());
@@ -131,7 +131,11 @@ mod tests {
     use crate::source::DownloadSource;
 
     fn view(status: Status) -> ItemView {
-        let mut item = Item::new(ItemId(1), DownloadSource::parse("https://vimeo.com/1").unwrap(), Options { destination: "/x/Dawnload".into(), ..Options::default() });
+        let mut item = Item::new(
+            ItemId(1),
+            DownloadSource::parse("https://vimeo.com/1").unwrap(),
+            Options { destination: "/x/Dawnload".into(), ..Options::default() },
+        );
         item.status = status;
         ItemView::of(&item)
     }
@@ -168,7 +172,8 @@ mod tests {
         assert_eq!(subline(&kept, None), "Kept in Dawnload · 1 file · 45.6 MB");
 
         let mut paused = view(Status::Paused);
-        paused.transfer = Transfer { fraction: Some(0.62), bytes_done: Some(28_300_000), bytes_total: Some(45_600_000), ..Transfer::default() };
+        paused.transfer =
+            Transfer { fraction: Some(0.62), bytes_done: Some(28_300_000), bytes_total: Some(45_600_000), ..Transfer::default() };
         assert_eq!(subline(&paused, None), "Paused at 62% · 28.3 of 45.6 MB");
 
         let mut seeding = view(Status::Seeding);

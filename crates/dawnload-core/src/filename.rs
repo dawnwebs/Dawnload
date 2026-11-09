@@ -67,8 +67,10 @@ fn meaningful_title(value: Option<&str>, rejected: &HashSet<String>) -> Option<S
 fn title_slug(url: Option<&str>) -> Option<String> {
     let url = Url::parse(url?).ok()?;
     let segments: Vec<&str> = url.path().split('/').filter(|s| !s.is_empty()).collect();
-    const MARKERS: [&str; 15] =
-        ["clip", "clips", "play", "post", "posts", "reel", "reels", "short", "shorts", "status", "statuses", "v", "video", "videos", "watch"];
+    const MARKERS: [&str; 15] = [
+        "clip", "clips", "play", "post", "posts", "reel", "reels", "short", "shorts", "status", "statuses", "v", "video",
+        "videos", "watch",
+    ];
     for i in 0..segments.len().saturating_sub(1) {
         if MARKERS.contains(&segments[i].to_lowercase().as_str()) {
             return readable_slug(segments[i + 1]);
@@ -116,14 +118,17 @@ fn looks_like_url(value: &str) -> bool {
 
 fn display_date(date: Option<&str>) -> Option<String> {
     let date = date?;
-    (date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit())).then(|| format!("{}-{}-{}", &date[..4], &date[4..6], &date[6..]))
+    (date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| format!("{}-{}-{}", &date[..4], &date[4..6], &date[6..]))
 }
 
 /// A file name component that is valid on Windows, macOS and Linux, whichever OS the files end
 /// up on: no `<>:"/\|?*` or control characters, no trailing dots or spaces, no reserved names.
 pub fn safe_component(value: &str) -> String {
-    let replaced: String =
-        value.chars().map(|c| if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') { ' ' } else { c }).collect();
+    let replaced: String = value
+        .chars()
+        .map(|c| if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') { ' ' } else { c })
+        .collect();
     let collapsed = replaced.split_whitespace().collect::<Vec<_>>().join(" ");
     let trimmed = collapsed.trim_matches(|c: char| c == '.' || c.is_whitespace()).to_string();
     let stem = trimmed.split('.').next().unwrap_or("").to_ascii_uppercase();
@@ -268,7 +273,8 @@ mod tests {
 
     #[test]
     fn uses_source_url_when_metadata_url_has_no_slug() {
-        let m = SmartFilenameMetadata { webpage_url: Some("https://spankbang.com/77ii8/video/".into()), ..meta("77ii8", "77ii8") };
+        let m =
+            SmartFilenameMetadata { webpage_url: Some("https://spankbang.com/77ii8/video/".into()), ..meta("77ii8", "77ii8") };
         assert_eq!(best_title(&m, "https://spankbang.com/77ii8/video/better+fallback"), "Better Fallback");
     }
 
@@ -305,7 +311,9 @@ mod tests {
         std::fs::write(&file, b"new").unwrap();
         let mut logs = Vec::new();
         let existing: HashSet<PathBuf> = [taken.clone(), file.clone()].into();
-        let out = apply_smart_names(&[file.clone()], &existing, &[meta("xyz", "Big Buck Bunny")], "", &mut |l| logs.push(l));
+        let out = apply_smart_names(std::slice::from_ref(&file), &existing, &[meta("xyz", "Big Buck Bunny")], "", &mut |l| {
+            logs.push(l)
+        });
         assert_eq!(out, vec![dir.path().join("Big Buck Bunny 2.mp4")]);
         assert_eq!(std::fs::read(&out[0]).unwrap(), b"new");
         assert_eq!(logs, vec!["Named Big Buck Bunny 2.mp4".to_string()]);

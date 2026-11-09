@@ -48,10 +48,31 @@ impl Rng {
 }
 
 const TITLES: &[&str] = &[
-    "Big Buck Bunny", "Sintel", "Tears of Steel", "Elephants Dream", "Spring", "Cosmos Laundromat", "Agent 327",
-    "Caminandes", "Glass Half", "Charge", "Sprite Fright", "Hero", "Coffee Run", "Wing It", "Night of the Living Dead",
-    "Ubuntu 26.04 Desktop", "Debian 13 netinst", "Fedora Workstation 45", "Open Movie Soundtrack", "Public Domain Archive",
-    "NASA Earth at Night", "Apollo 11 Restored", "Lecture 12: Compilers", "Field Recording, Rain", "Podcast Episode 214",
+    "Big Buck Bunny",
+    "Sintel",
+    "Tears of Steel",
+    "Elephants Dream",
+    "Spring",
+    "Cosmos Laundromat",
+    "Agent 327",
+    "Caminandes",
+    "Glass Half",
+    "Charge",
+    "Sprite Fright",
+    "Hero",
+    "Coffee Run",
+    "Wing It",
+    "Night of the Living Dead",
+    "Ubuntu 26.04 Desktop",
+    "Debian 13 netinst",
+    "Fedora Workstation 45",
+    "Open Movie Soundtrack",
+    "Public Domain Archive",
+    "NASA Earth at Night",
+    "Apollo 11 Restored",
+    "Lecture 12: Compilers",
+    "Field Recording, Rain",
+    "Podcast Episode 214",
 ];
 
 pub fn demo_title(seed: u64) -> String {
@@ -101,7 +122,9 @@ async fn run(engine: DemoEngine, request: JobRequest, ctx: JobContext) -> JobRes
     ctx.emit(JobEvent::Title(demo_title(request.item_id.0)));
     ctx.emit(JobEvent::Command(format!("demo --size {total} --rate {rate:.0}")));
     ctx.phase(Status::Pulling, None);
-    let file = |done: u64| vec![ItemFile { path: path.display().to_string(), size: Some(total), bytes_done: Some(done), selected: true }];
+    let file = |done: u64| {
+        vec![ItemFile { path: path.display().to_string(), size: Some(total), bytes_done: Some(done), selected: true }]
+    };
     ctx.emit(JobEvent::Files(file(done)));
 
     let mut interval = tokio::time::interval(tick);
@@ -120,9 +143,13 @@ async fn run(engine: DemoEngine, request: JobRequest, ctx: JobContext) -> JobRes
         done = (done + (speed * tick.as_secs_f64()) as u64).min(total);
         let fraction = done as f64 / total as f64;
         if fails_at.is_some_and(|at| fraction >= at) {
-            return Err(DownloadFailure::new(FailureKind::Forbidden, "This site refused the request (HTTP 403).", Some("Turn on browser impersonation, or add your cookies.txt in Settings."))
-                .with_detail("ERROR: demo: HTTP Error 403: Forbidden")
-                .into());
+            return Err(DownloadFailure::new(
+                FailureKind::Forbidden,
+                "This site refused the request (HTTP 403).",
+                Some("Turn on browser impersonation, or add your cookies.txt in Settings."),
+            )
+            .with_detail("ERROR: demo: HTTP Error 403: Forbidden")
+            .into());
         }
         ctx.emit(JobEvent::Transfer(Transfer {
             fraction: Some(fraction),
@@ -143,7 +170,7 @@ async fn run(engine: DemoEngine, request: JobRequest, ctx: JobContext) -> JobRes
                 ratio: 0.1 * fraction,
             }));
         }
-        if ticks % 10 == 0 {
+        if ticks.is_multiple_of(10) {
             ctx.emit(JobEvent::Files(file(done)));
         }
     }

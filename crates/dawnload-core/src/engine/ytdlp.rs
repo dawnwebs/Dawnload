@@ -52,17 +52,10 @@ pub const COMPATIBLE_SORT: &str = "vcodec:h264,res,acodec:aac,ext:mp4:m4a";
 /// The yt-dlp command line for one item.
 pub fn arguments(url: &str, options: &Options, tools: &ToolSnapshot) -> Vec<String> {
     let ffmpeg = tools.path(ToolId::Ffmpeg);
-    let mut args: Vec<String> = [
-        "--newline",
-        "--no-color",
-        "--progress",
-        "--ignore-config",
-        "--no-update",
-        "--no-mtime",
-        "--continue",
-    ]
-    .map(String::from)
-    .to_vec();
+    let mut args: Vec<String> =
+        ["--newline", "--no-color", "--progress", "--ignore-config", "--no-update", "--no-mtime", "--continue"]
+            .map(String::from)
+            .to_vec();
     args.extend(["-P".into(), options.destination.display().to_string()]);
     args.extend(["-o".into(), "%(title).200B [%(id)s].%(ext)s".into()]);
     args.extend(markers::marker_arguments());
@@ -115,10 +108,10 @@ async fn run(request: JobRequest, ctx: JobContext) -> JobResult {
     if options.polish && !tools.has(ToolId::Ffmpeg) {
         return Err(DownloadFailure::tool_missing("ffmpeg").into());
     }
-    if let Cookies::File(path) = &options.cookies {
-        if std::fs::File::open(path).is_err() {
-            return Err(DownloadFailure::cookies_unreadable().into());
-        }
+    if let Cookies::File(path) = &options.cookies
+        && std::fs::File::open(path).is_err()
+    {
+        return Err(DownloadFailure::cookies_unreadable().into());
     }
     let destination = options.destination.clone();
     std::fs::create_dir_all(&destination).map_err(|_| DownloadFailure::folder_unavailable(&destination.display().to_string()))?;
@@ -180,7 +173,8 @@ async fn run(request: JobRequest, ctx: JobContext) -> JobResult {
     new_files.sort();
     let files = if new_files.is_empty() {
         // Already on disk: yt-dlp skipped the download. The files it reported are still this item's.
-        let existing: Vec<PathBuf> = dedup(metadata.iter().filter_map(|m| m.filepath.as_deref()).map(PathBuf::from).filter(|p| p.exists()));
+        let existing: Vec<PathBuf> =
+            dedup(metadata.iter().filter_map(|m| m.filepath.as_deref()).map(PathBuf::from).filter(|p| p.exists()));
         if !existing.is_empty() {
             ctx.log("Already in the folder; nothing new to download.");
         }
@@ -189,17 +183,17 @@ async fn run(request: JobRequest, ctx: JobContext) -> JobResult {
         filename::apply_smart_names(&new_files, &after, &metadata, url, &mut |line| ctx.log(line))
     };
 
-    if files.len() == 1 {
-        if let Some(stem) = files[0].file_stem() {
-            ctx.emit(JobEvent::Title(stem.to_string_lossy().into_owned()));
-        }
+    if files.len() == 1
+        && let Some(stem) = files[0].file_stem()
+    {
+        ctx.emit(JobEvent::Title(stem.to_string_lossy().into_owned()));
     }
 
     let mut polished = 0;
-    if options.polish {
-        if let Some(ffmpeg) = tools.path(ToolId::Ffmpeg) {
-            polished = finishing::polish(&files, ffmpeg, &tools.env, &ctx).await?;
-        }
+    if options.polish
+        && let Some(ffmpeg) = tools.path(ToolId::Ffmpeg)
+    {
+        polished = finishing::polish(&files, ffmpeg, &tools.env, &ctx).await?;
     }
     Ok(JobOutcome { files, polished })
 }
@@ -233,7 +227,11 @@ mod tests {
         let args = arguments("https://youtu.be/x", &options, &tools(true));
         let text = joined(&args);
         assert!(text.contains("-P /dl"));
-        assert!(text.contains("--merge-output-format mp4 --remux-video mp4 --embed-metadata --ffmpeg-location /bin/ffmpeg -f bv*+ba/b"));
+        assert!(
+            text.contains(
+                "--merge-output-format mp4 --remux-video mp4 --embed-metadata --ffmpeg-location /bin/ffmpeg -f bv*+ba/b"
+            )
+        );
         assert!(text.ends_with("--no-playlist -- https://youtu.be/x"));
         assert!(!text.contains("--js-runtimes"));
     }
@@ -256,7 +254,12 @@ mod tests {
         assert!(text.contains("--cookies-from-browser firefox"));
         assert!(text.contains("--yes-playlist"));
 
-        let options = Options { quality: Quality::Compatible, polish: false, cookies: Cookies::File("/c.txt".into()), ..Options::default() };
+        let options = Options {
+            quality: Quality::Compatible,
+            polish: false,
+            cookies: Cookies::File("/c.txt".into()),
+            ..Options::default()
+        };
         let text = joined(&arguments("https://x.test/v", &options, &tools(false)));
         assert!(text.contains("-S vcodec:h264,res,acodec:aac,ext:mp4:m4a -f b"));
         assert!(text.contains("--cookies /c.txt"));

@@ -293,12 +293,15 @@ impl ToolManager {
                 snapshot.origins.insert(tool, origin);
             }
         }
-        snapshot.js_runtime = snapshot.path(ToolId::Deno).map(|p| JsRuntime { kind: JsRuntimeKind::Deno, path: p.to_path_buf() }).or_else(|| {
-            [(JsRuntimeKind::Node, "node"), (JsRuntimeKind::Bun, "bun"), (JsRuntimeKind::QuickJs, "qjs")].into_iter().find_map(|(kind, name)| {
-                let exe = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
-                self.find_on_system(&exe).map(|path| JsRuntime { kind, path })
-            })
-        });
+        snapshot.js_runtime =
+            snapshot.path(ToolId::Deno).map(|p| JsRuntime { kind: JsRuntimeKind::Deno, path: p.to_path_buf() }).or_else(|| {
+                [(JsRuntimeKind::Node, "node"), (JsRuntimeKind::Bun, "bun"), (JsRuntimeKind::QuickJs, "qjs")]
+                    .into_iter()
+                    .find_map(|(kind, name)| {
+                        let exe = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+                        self.find_on_system(&exe).map(|path| JsRuntime { kind, path })
+                    })
+            });
 
         // Tools find each other (yt-dlp → ffmpeg, deno) through PATH: managed first.
         let mut path_dirs = vec![self.bin_dir()];
@@ -351,12 +354,12 @@ impl ToolManager {
         let mut latest_by_package: BTreeMap<ToolId, Option<String>> = BTreeMap::new();
         for status in &mut statuses {
             let package = status.tool.package();
-            if !latest_by_package.contains_key(&package) {
+            if let std::collections::btree_map::Entry::Vacant(e) = latest_by_package.entry(package) {
                 let latest = match release_plan(package) {
                     Some(plan) => resolve(&client, &plan).await.ok().map(|r| r.version),
                     None => None,
                 };
-                latest_by_package.insert(package, latest);
+                e.insert(latest);
             }
             status.latest = latest_by_package[&package].clone();
             status.update_available = match (&status.latest, &status.version, status.origin) {
@@ -371,8 +374,9 @@ impl ToolManager {
     /// checksum and test-run before it replaces anything. Returns the version installed.
     pub async fn install(&self, tool: ToolId, progress: InstallProgress<'_>) -> Result<String, ToolError> {
         let package = tool.package();
-        let plan = release_plan(package)
-            .ok_or_else(|| err(format!("Dawnload can't install {} on this system yet; install it with your package manager.", tool.name())))?;
+        let plan = release_plan(package).ok_or_else(|| {
+            err(format!("Dawnload can't install {} on this system yet; install it with your package manager.", tool.name()))
+        })?;
         let client = crate::net::client();
         let release = resolve(&client, &plan).await?;
         let tmp = self.dir.join("tmp");
@@ -398,7 +402,8 @@ impl ToolManager {
         }
 
         for download in &release.downloads {
-            let archive_path = tmp.join(format!("download-{}", download.provides.first().map(|(_, t)| t.name()).unwrap_or("tool")));
+            let archive_path =
+                tmp.join(format!("download-{}", download.provides.first().map(|(_, t)| t.name()).unwrap_or("tool")));
             let actual = fetch_to_file(&client, &download.url, &archive_path, &mut |done, total| {
                 progress(download.provides[0].1, done, total)
             })
@@ -421,12 +426,15 @@ impl ToolManager {
                 make_executable(&file)?;
                 // Test-run it before it replaces anything.
                 if version_of(tool_id, &file).await.is_none() {
-                    return Err(err(format!("The downloaded {} didn't run on this system. Nothing was installed.", tool_id.name())));
+                    return Err(err(format!(
+                        "The downloaded {} didn't run on this system. Nothing was installed.",
+                        tool_id.name()
+                    )));
                 }
                 let target = self.bin_dir().join(tool_id.executable());
-                std::fs::rename(&file, &target).or_else(|_| std::fs::copy(&file, &target).map(|_| ())).map_err(|e| {
-                    err(format!("Can't put {} in place (is it running?): {e}", target.display()))
-                })?;
+                std::fs::rename(&file, &target)
+                    .or_else(|_| std::fs::copy(&file, &target).map(|_| ()))
+                    .map_err(|e| err(format!("Can't put {} in place (is it running?): {e}", target.display())))?;
                 manifest.tools.insert(
                     tool_id,
                     ManagedTool {
@@ -448,7 +456,13 @@ impl ToolManager {
         let python = ["python3", "python"]
             .iter()
             .find_map(|name| self.find_on_system(&if cfg!(windows) { format!("{name}.exe") } else { name.to_string() }))
-            .ok_or_else(|| err(format!("{} needs Python 3 on this system; install Python, or install {} with your package manager.", tool.name(), tool.name())))?;
+            .ok_or_else(|| {
+                err(format!(
+                    "{} needs Python 3 on this system; install Python, or install {} with your package manager.",
+                    tool.name(),
+                    tool.name()
+                ))
+            })?;
         let venv = self.venv_dir(tool);
         let stop = StopSignal::new();
         let cwd = self.dir.clone();
@@ -569,11 +583,14 @@ enum ReleaseKind {
     PipVenv { package: &'static str },
 }
 
+/// (asset name, archive kind, [(member file name, tool)]).
+type PlannedAsset = (String, Archive, Vec<(String, ToolId)>);
+
 #[derive(Clone, Debug)]
 struct ReleasePlan {
     kind: ReleaseKind,
     /// (asset name, archive kind, [(member file name, tool)]).
-    assets: Vec<(String, Archive, Vec<(String, ToolId)>)>,
+    assets: Vec<PlannedAsset>,
     /// A checksum list in the release, used when the asset itself has no digest.
     sums_file: Option<&'static str>,
 }
@@ -640,7 +657,12 @@ fn release_plan(package: ToolId) -> Option<ReleasePlan> {
             _ => Some(ReleasePlan { kind: ReleaseKind::PipVenv { package: "gallery-dl" }, assets: vec![], sums_file: None }),
         },
         ToolId::Ffmpeg | ToolId::Ffprobe => {
-            let both = |prefix: &str| vec![(format!("{prefix}{}", exe("ffmpeg")), ToolId::Ffmpeg), (format!("{prefix}{}", exe("ffprobe")), ToolId::Ffprobe)];
+            let both = |prefix: &str| {
+                vec![
+                    (format!("{prefix}{}", exe("ffmpeg")), ToolId::Ffmpeg),
+                    (format!("{prefix}{}", exe("ffprobe")), ToolId::Ffprobe),
+                ]
+            };
             let github = |asset: &str, archive| ReleasePlan {
                 kind: ReleaseKind::GitHub { repo: "FFmpeg-Builds/FFmpeg-Builds", tag: Some("latest") },
                 assets: vec![(asset.into(), archive, both(""))],
@@ -653,7 +675,8 @@ fn release_plan(package: ToolId) -> Option<ReleasePlan> {
                 ("linux", "aarch64") => Some(github("ffmpeg-master-latest-linuxarm64-gpl.tar.xz", Archive::TarXz)),
                 ("macos", arch) => {
                     let arch = if arch == "aarch64" { "arm64" } else { "amd64" };
-                    let url = |name: &str| format!("https://ffmpeg.martin-riedl.de/redirect/latest/macos/{arch}/release/{name}.zip");
+                    let url =
+                        |name: &str| format!("https://ffmpeg.martin-riedl.de/redirect/latest/macos/{arch}/release/{name}.zip");
                     Some(ReleasePlan {
                         kind: ReleaseKind::RedirectWithSidecar {
                             urls: vec![
@@ -673,10 +696,10 @@ fn release_plan(package: ToolId) -> Option<ReleasePlan> {
 
 async fn get_json(client: &reqwest::Client, url: &str) -> Result<serde_json::Value, ToolError> {
     let mut request = client.get(url).header("Accept", "application/json");
-    if url.starts_with("https://api.github.com/") {
-        if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-            request = request.bearer_auth(token);
-        }
+    if url.starts_with("https://api.github.com/")
+        && let Ok(token) = std::env::var("GITHUB_TOKEN")
+    {
+        request = request.bearer_auth(token);
     }
     let response = request.send().await.map_err(|e| err(format!("Can't reach {url}: {e}")))?;
     if !response.status().is_success() {
@@ -743,7 +766,12 @@ async fn resolve(client: &reqwest::Client, plan: &ReleasePlan) -> Result<Release
                 let sha256 = hash_from_sums(&sums, &file)
                     .or_else(|| sums.split_whitespace().next().filter(|h| h.len() == 64).map(str::to_string))
                     .ok_or_else(|| err(format!("No checksum published for {final_url}")))?;
-                downloads.push(Download { url: final_url.to_string(), sha256, archive: Archive::Zip, provides: vec![(exe(member), *tool)] });
+                downloads.push(Download {
+                    url: final_url.to_string(),
+                    sha256,
+                    archive: Archive::Zip,
+                    provides: vec![(exe(member), *tool)],
+                });
             }
             Ok(Release { version, downloads })
         }
@@ -771,17 +799,18 @@ async fn from_release_json(
         let asset = find(name).ok_or_else(|| err(format!("The latest release has no {name}")))?;
         let url = asset["browser_download_url"].as_str().ok_or_else(|| err("asset without URL"))?.to_string();
         let mut sha256 = asset["digest"].as_str().and_then(|d| d.strip_prefix("sha256:")).map(str::to_string);
-        if sha256.is_none() {
-            if let Some(sums_name) = plan.sums_file {
-                if sums.is_none() {
-                    let sums_asset = find(sums_name).ok_or_else(|| err(format!("The release has no {sums_name}")))?;
-                    let sums_url = sums_asset["browser_download_url"].as_str().unwrap_or_default();
-                    sums = Some(get_text(client, sums_url).await?);
-                }
-                sha256 = sums.as_deref().and_then(|s| hash_from_sums(s, name));
+        if sha256.is_none()
+            && let Some(sums_name) = plan.sums_file
+        {
+            if sums.is_none() {
+                let sums_asset = find(sums_name).ok_or_else(|| err(format!("The release has no {sums_name}")))?;
+                let sums_url = sums_asset["browser_download_url"].as_str().unwrap_or_default();
+                sums = Some(get_text(client, sums_url).await?);
             }
+            sha256 = sums.as_deref().and_then(|s| hash_from_sums(s, name));
         }
-        let sha256 = sha256.ok_or_else(|| err(format!("No checksum published for {name}; Dawnload won't install it unverified.")))?;
+        let sha256 =
+            sha256.ok_or_else(|| err(format!("No checksum published for {name}; Dawnload won't install it unverified.")))?;
         if rolling {
             // A moving tag (FFmpeg-Builds `latest`): the build's identity is its date and digest.
             let date = asset["updated_at"].as_str().unwrap_or_default().get(..10).unwrap_or_default();
@@ -818,7 +847,12 @@ async fn fetch_to_file(
     Ok(hex::encode(hasher.finalize()))
 }
 
-fn extract(archive_path: &Path, archive: Archive, members: &[(String, ToolId)], out_dir: &Path) -> Result<Vec<(ToolId, PathBuf)>, ToolError> {
+fn extract(
+    archive_path: &Path,
+    archive: Archive,
+    members: &[(String, ToolId)],
+    out_dir: &Path,
+) -> Result<Vec<(ToolId, PathBuf)>, ToolError> {
     let mut out = Vec::new();
     match archive {
         Archive::Raw => {
@@ -832,7 +866,11 @@ fn extract(archive_path: &Path, archive: Archive, members: &[(String, ToolId)], 
             let mut zip = zip::ZipArchive::new(file).map_err(|e| err(format!("Unreadable zip: {e}")))?;
             for (member, tool) in members {
                 let index = (0..zip.len())
-                    .find(|i| zip.by_index(*i).ok().is_some_and(|f| f.is_file() && f.name().ok().is_some_and(|n| n.rsplit('/').next() == Some(member.as_str()))))
+                    .find(|i| {
+                        zip.by_index(*i).ok().is_some_and(|f| {
+                            f.is_file() && f.name().ok().is_some_and(|n| n.rsplit('/').next() == Some(member.as_str()))
+                        })
+                    })
                     .ok_or_else(|| err(format!("{member} isn't in the archive")))?;
                 let mut entry = zip.by_index(index).map_err(|e| err(e.to_string()))?;
                 let target = out_dir.join(format!("new-{}", tool.executable()));
@@ -880,7 +918,10 @@ mod tests {
     fn parses_versions() {
         assert_eq!(parse_version(ToolId::YtDlp, "2026.10.26\n").as_deref(), Some("2026.10.26"));
         assert_eq!(parse_version(ToolId::Ffmpeg, "ffmpeg version 9.0.2 Copyright (c) 2000-2026").as_deref(), Some("9.0.2"));
-        assert_eq!(parse_version(ToolId::Deno, "deno 2.9.8 (stable, release, aarch64-apple-darwin)\nv8 14").as_deref(), Some("2.9.8"));
+        assert_eq!(
+            parse_version(ToolId::Deno, "deno 2.9.8 (stable, release, aarch64-apple-darwin)\nv8 14").as_deref(),
+            Some("2.9.8")
+        );
         assert_eq!(parse_version(ToolId::GalleryDl, "1.32.19").as_deref(), Some("1.32.19"));
         assert!(same_version("v2.9.8", "2.9.8"));
     }
@@ -888,8 +929,14 @@ mod tests {
     #[test]
     fn reads_checksum_lists() {
         let sums = "0d7e  SHORT\n767ba9dce7052aa196f8b12652f433d76de128ba168966fa84b6394d5e6c6795  yt-dlp_linux\nE51E69E89489F199530F13D32A4342DA3DDB2CF34842F364603A066DB05AFBF3 *yt-dlp\n";
-        assert_eq!(hash_from_sums(sums, "yt-dlp_linux").as_deref(), Some("767ba9dce7052aa196f8b12652f433d76de128ba168966fa84b6394d5e6c6795"));
-        assert_eq!(hash_from_sums(sums, "yt-dlp").as_deref(), Some("e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3"));
+        assert_eq!(
+            hash_from_sums(sums, "yt-dlp_linux").as_deref(),
+            Some("767ba9dce7052aa196f8b12652f433d76de128ba168966fa84b6394d5e6c6795")
+        );
+        assert_eq!(
+            hash_from_sums(sums, "yt-dlp").as_deref(),
+            Some("e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3")
+        );
         assert_eq!(hash_from_sums(sums, "SHORT"), None);
     }
 

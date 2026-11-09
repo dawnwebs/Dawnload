@@ -288,7 +288,8 @@ impl Core {
             reader.as_ref().and_then(|r| r.setting("tools_checked_at").ok().flatten()).and_then(|v| v.parse().ok()).unwrap_or(0);
 
         // Ids are never reused, even after a remove, so `dawnload log 5` always means one item.
-        let stored_next: u64 = reader.as_ref().and_then(|r| r.setting("next_id").ok().flatten()).and_then(|v| v.parse().ok()).unwrap_or(1);
+        let stored_next: u64 =
+            reader.as_ref().and_then(|r| r.setting("next_id").ok().flatten()).and_then(|v| v.parse().ok()).unwrap_or(1);
         let mut actor = Actor {
             next_id: (items.iter().map(|i| i.id.0).max().unwrap_or(0) + 1).max(stored_next),
             order: items.iter().map(|i| i.id).collect(),
@@ -343,7 +344,8 @@ impl Core {
             let due = now_millis() - tools_checked_at > DAY_MS;
             spawn_tool_check(actor.tools.clone(), due && actor.settings.auto_update_tools, internal_tx);
         }
-        let channels = Channels { commands: rx, events: events_rx, done: done_rx, timers: timer_rx, watch: watch_rx, internal: internal_rx };
+        let channels =
+            Channels { commands: rx, events: events_rx, done: done_rx, timers: timer_rx, watch: watch_rx, internal: internal_rx };
         tokio::spawn(actor.run(channels, config.update_interval));
         Ok(handle)
     }
@@ -459,10 +461,10 @@ impl Actor {
         let mut shutdown_deadline: Option<tokio::time::Instant> = None;
 
         loop {
-            if let Some(deadline) = shutdown_deadline {
-                if self.running.is_empty() || tokio::time::Instant::now() >= deadline {
-                    break;
-                }
+            if let Some(deadline) = shutdown_deadline
+                && (self.running.is_empty() || tokio::time::Instant::now() >= deadline)
+            {
+                break;
             }
             tokio::select! {
                 command = commands.recv(), if shutdown_deadline.is_none() => match command {
@@ -566,7 +568,10 @@ impl Actor {
             }
             Command::SetSettings { settings, reply } => {
                 self.settings = *settings;
-                self.store(vec![StoreOp::Setting { key: "settings".into(), value: serde_json::to_string(&self.settings).unwrap_or_default() }]);
+                self.store(vec![StoreOp::Setting {
+                    key: "settings".into(),
+                    value: serde_json::to_string(&self.settings).unwrap_or_default(),
+                }]);
                 self.pump();
                 let _ = reply.send(());
             }
@@ -664,7 +669,8 @@ impl Actor {
                 }
             }
             Action::ResumeAll => {
-                let paused: Vec<ItemId> = self.order.iter().copied().filter(|id| self.items[id].status == Status::Paused).collect();
+                let paused: Vec<ItemId> =
+                    self.order.iter().copied().filter(|id| self.items[id].status == Status::Paused).collect();
                 for id in paused {
                     self.set_status(id, Status::Queued);
                     self.persist(id);
@@ -749,7 +755,8 @@ impl Actor {
     /// Moves a waiting item among waiting items. The slots waiting items occupy in the order
     /// stay where they are; only who sits in them changes.
     fn move_waiting(&mut self, id: ItemId, index: usize) {
-        let slots: Vec<usize> = self.order.iter().enumerate().filter(|(_, i)| self.items[i].status == Status::Queued).map(|(n, _)| n).collect();
+        let slots: Vec<usize> =
+            self.order.iter().enumerate().filter(|(_, i)| self.items[i].status == Status::Queued).map(|(n, _)| n).collect();
         let mut waiting: Vec<ItemId> = slots.iter().map(|n| self.order[*n]).collect();
         let Some(from) = waiting.iter().position(|i| *i == id) else { return };
         let moving = waiting.remove(from);
@@ -777,13 +784,13 @@ impl Actor {
     }
 
     fn delete(&mut self, id: ItemId) {
-        if let Some(item) = self.items.remove(&id) {
-            if !item.status.has_files() {
-                // Leftovers of an unfinished direct download. Kept files are never touched.
-                for file in &item.files {
-                    for suffix in [".dawnload-part", ".dawnload-state"] {
-                        let _ = std::fs::remove_file(format!("{}{suffix}", file.path));
-                    }
+        if let Some(item) = self.items.remove(&id)
+            && !item.status.has_files()
+        {
+            // Leftovers of an unfinished direct download. Kept files are never touched.
+            for file in &item.files {
+                for suffix in [".dawnload-part", ".dawnload-state"] {
+                    let _ = std::fs::remove_file(format!("{}{suffix}", file.path));
                 }
             }
         }
@@ -827,11 +834,11 @@ impl Actor {
             .collect();
         for id in candidates {
             let lane = self.lane_of(&self.items[&id]);
-            if let Some(slots) = free.get_mut(&lane) {
-                if *slots > 0 {
-                    *slots -= 1;
-                    self.start(id);
-                }
+            if let Some(slots) = free.get_mut(&lane)
+                && *slots > 0
+            {
+                *slots -= 1;
+                self.start(id);
             }
         }
         let waiting = self.items.values().any(|i| i.status == Status::Queued);
@@ -1051,11 +1058,11 @@ impl Actor {
     // MARK: Bookkeeping
 
     fn set_status(&mut self, id: ItemId, status: Status) {
-        if let Some(item) = self.items.get_mut(&id) {
-            if item.status != status {
-                item.status = status;
-                self.counts_dirty = true;
-            }
+        if let Some(item) = self.items.get_mut(&id)
+            && item.status != status
+        {
+            item.status = status;
+            self.counts_dirty = true;
         }
         self.mark(id);
     }
@@ -1173,7 +1180,8 @@ impl Actor {
             changes.push(Change::Notice { text });
         }
         self.detail_dirty.clear();
-        let details: HashMap<ItemId, ItemDetail> = detail_ids.into_iter().filter_map(|id| self.detail(id).map(|d| (id, d))).collect();
+        let details: HashMap<ItemId, ItemDetail> =
+            detail_ids.into_iter().filter_map(|id| self.detail(id).map(|d| (id, d))).collect();
         if !changes.is_empty() {
             self.revision += 1;
         }

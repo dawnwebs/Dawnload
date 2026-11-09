@@ -90,7 +90,7 @@ pub struct Counts {
 }
 
 impl Counts {
-    pub fn of<'a>(statuses: impl Iterator<Item = Status>) -> Counts {
+    pub fn of(statuses: impl Iterator<Item = Status>) -> Counts {
         let mut c = Counts::default();
         for s in statuses {
             c.all += 1;
@@ -136,17 +136,34 @@ pub struct Snapshot {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)] // Upsert is the common case; boxing it would cost more.
 pub enum Change {
-    Upsert { item: ItemView },
-    Remove { id: ItemId },
+    Upsert {
+        item: ItemView,
+    },
+    Remove {
+        id: ItemId,
+    },
     /// The whole queue order (ids), after an add, a move or a removal.
-    Order { ids: Vec<ItemId> },
-    Counts { counts: Counts },
-    Queue { queue: QueueState },
-    Detail { detail: Box<ItemDetail> },
-    Tools { tools: Vec<ToolStatus> },
+    Order {
+        ids: Vec<ItemId>,
+    },
+    Counts {
+        counts: Counts,
+    },
+    Queue {
+        queue: QueueState,
+    },
+    Detail {
+        detail: Box<ItemDetail>,
+    },
+    Tools {
+        tools: Vec<ToolStatus>,
+    },
     /// A sentence for a toast: "yt-dlp is up to date (2026.10.26)."
-    Notice { text: String },
+    Notice {
+        text: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -171,17 +188,33 @@ pub enum Action {
     PauseAll,
     ResumeAll,
     /// Pauses a running item, or holds back a waiting one.
-    Pause { id: ItemId },
+    Pause {
+        id: ItemId,
+    },
     /// Resume a paused item, retry a failed one, or start a waiting one now: it goes to the head
     /// of the line and the queue runs.
-    Resume { id: ItemId },
-    Remove { ids: Vec<ItemId> },
-    StopSeeding { id: ItemId },
+    Resume {
+        id: ItemId,
+    },
+    Remove {
+        ids: Vec<ItemId>,
+    },
+    StopSeeding {
+        id: ItemId,
+    },
     /// Moves a waiting item to `index` among waiting items (0 is up next).
-    Move { id: ItemId, index: usize },
-    SetOptions { id: ItemId, options: Options },
+    Move {
+        id: ItemId,
+        index: usize,
+    },
+    SetOptions {
+        id: ItemId,
+        options: Options,
+    },
     /// Removes every item in this state (Kept, Failed).
-    Clear { status: Status },
+    Clear {
+        status: Status,
+    },
 }
 
 // MARK: - Grouping (shared by every UI)
@@ -272,9 +305,15 @@ impl Section {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Row {
-    Header { section: Section, count: usize },
+    Header {
+        section: Section,
+        count: usize,
+    },
     /// `queue_position` is 1-based among waiting items.
-    Item { id: ItemId, queue_position: Option<usize> },
+    Item {
+        id: ItemId,
+        queue_position: Option<usize>,
+    },
 }
 
 /// What applying an update changed, so a UI touches only that.
