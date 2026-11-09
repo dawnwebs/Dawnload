@@ -51,8 +51,8 @@ That's the demo: 500 fake items, a tenth of them torrents that seed. `-- --real`
 core with your tools and data folder. Switches for reviews and measurement:
 `DAWNLOAD_UI_THEME=light|dark`, `DAWNLOAD_UI_SELECT_FIRST=1`, `DAWNLOAD_DEMO_ITEMS=<n>`,
 `DAWNLOAD_UI_STATS=1` (frames and updates per second on stderr), `DAWNLOAD_UI_AUTOSCROLL=<px>`,
-`DAWNLOAD_UI_EASE_ROWS=1`, `DAWNLOAD_UI_EXIT_AFTER=<s>`. `scripts/measure-ui.sh` (macOS, Linux)
-and `scripts/measure-ui.ps1` (Windows) run the standard measurement.
+`DAWNLOAD_UI_EASE_ROWS=1`, `DAWNLOAD_UI_EXIT_AFTER=<s>`. `Scripts/measure-ui.sh` (macOS, Linux)
+and `Scripts/measure-ui.ps1` (Windows) run the standard measurement.
 
 ## Where things are
 

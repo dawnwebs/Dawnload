@@ -6,7 +6,7 @@
 //! often as the core sends batches (4 per second). The UI thread never formats a byte count.
 //!
 //! `dawnload-app` runs the demo engine with 500 items. `dawnload-app --real` runs the real core
-//! (your data folder, your tools). Measurement switches (see scripts/measure-ui.sh):
+//! (your data folder, your tools). Measurement switches (see Scripts/measure-ui.sh):
 //! DAWNLOAD_UI_STATS=1 prints frames and updates per second; DAWNLOAD_UI_AUTOSCROLL=<px/frame>
 //! scrolls the list up and down forever; DAWNLOAD_UI_EXIT_AFTER=<seconds> quits;
 //! DAWNLOAD_DEMO_ITEMS=<n> changes the demo size.
@@ -621,7 +621,7 @@ async fn demo_driver(core: CoreHandle, count: usize) {
     }
 }
 
-/// FPS counting, auto-scroll and auto-exit for scripts/measure-ui.sh.
+/// FPS counting, auto-scroll and auto-exit for Scripts/measure-ui.sh.
 fn install_measurement(app: &AppWindow, counters: Arc<Counters>) {
     let stats = std::env::var("DAWNLOAD_UI_STATS").is_ok();
     let autoscroll: Option<f32> = std::env::var("DAWNLOAD_UI_AUTOSCROLL").ok().and_then(|v| v.parse().ok());

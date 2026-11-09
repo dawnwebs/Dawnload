@@ -1,8 +1,8 @@
 # Measures Dawnload's Slint prototype on Windows: memory and CPU with the window open and idle,
-# with 500 demo items updating, and while the list scrolls. Twin of scripts/measure-ui.sh.
+# with 500 demo items updating, and while the list scrolls. Twin of Scripts/measure-ui.sh.
 #
-#   pwsh scripts/measure-ui.ps1
-#   pwsh scripts/measure-ui.ps1 -SecondsPer 60
+#   pwsh Scripts/measure-ui.ps1
+#   pwsh Scripts/measure-ui.ps1 -SecondsPer 60
 param(
     [int]$SecondsPer = 30,
     [int]$Warmup = 8

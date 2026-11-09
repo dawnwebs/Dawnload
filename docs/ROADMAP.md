@@ -34,8 +34,8 @@ and the tool installers for those OSes haven't downloaded anything there.
 `crates/dawnload-ui`: the main window in Slint on the real update path, 500 demo items,
 measured. **Verdict: Slint confirmed** on macOS: 96 MB idle, 13.6% of one core while scrolling
 500 updating rows at full rate ([0008](adr/0008-slint-prototype-verdict.md)).
-Open: the same measurements on Windows and Linux (`scripts/measure-ui.ps1`,
-`scripts/measure-ui.sh`), and the owner's review of Slint's licence terms ([0009](adr/0009-licensing.md)).
+Open: the same measurements on Windows and Linux (`Scripts/measure-ui.ps1`,
+`Scripts/measure-ui.sh`), and the owner's review of Slint's licence terms ([0009](adr/0009-licensing.md)).
 
 ## 3 · The full app, Windows first
 

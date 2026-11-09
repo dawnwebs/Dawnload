@@ -34,7 +34,7 @@ and diffs them against what's on screen; the UI thread only receives the changed
 ## Measurements (macOS)
 
 MacBook Pro, Apple Silicon (arm64), macOS 27.2, release build, Slint 1.18.1 with the winit backend
-and FemtoVG (OpenGL) renderer. `scripts/measure-ui.sh`: 8 s warm-up, then 30 s per scenario.
+and FemtoVG (OpenGL) renderer. `Scripts/measure-ui.sh`: 8 s warm-up, then 30 s per scenario.
 CPU is the whole process (UI, core and the demo engine's 500 jobs), as a share of one core.
 Footprint is macOS's `phys_footprint` (Activity Monitor's "Memory").
 
@@ -71,8 +71,8 @@ Two choices follow from the numbers:
 
 ## Still to prove (phase 3 gates)
 
-- **Windows and Linux numbers.** Run `scripts/measure-ui.ps1` on Windows 11 and
-  `scripts/measure-ui.sh` on a Linux desktop (X11 and Wayland). Same targets. Not run yet.
+- **Windows and Linux numbers.** Run `Scripts/measure-ui.ps1` on Windows 11 and
+  `Scripts/measure-ui.sh` on a Linux desktop (X11 and Wayland). Same targets. Not run yet.
 - Accessibility with real screen readers (Narrator, Orca, VoiceOver): rows set an accessible
   label, but nothing has been tested with assistive technology.
 - IME and paste of non-Latin text in the paste field; HiDPI on Windows at 150%/175%.

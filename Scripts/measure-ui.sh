@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Measures Dawnload's Slint prototype: memory and CPU with the window open and idle, with 500
-# demo items updating, and while the list scrolls. macOS and Linux (scripts/measure-ui.ps1 is
+# demo items updating, and while the list scrolls. macOS and Linux (Scripts/measure-ui.ps1 is
 # the Windows twin). Needs a desktop session: the window must be on screen.
 #
-#   scripts/measure-ui.sh            # release build, 30 s per scenario
-#   SECONDS_PER=60 scripts/measure-ui.sh
+#   Scripts/measure-ui.sh            # release build, 30 s per scenario
+#   SECONDS_PER=60 Scripts/measure-ui.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SECONDS_PER=${SECONDS_PER:-30}
