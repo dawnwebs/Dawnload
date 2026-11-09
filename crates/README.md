@@ -56,12 +56,12 @@ and `Scripts/measure-ui.ps1` (Windows) run the standard measurement.
 
 ## Where things are
 
-- `core/src/source.rs`: what was pasted, and Auto routing. `explain.rs`: the detection line.
-- `core/src/engine/`: `mod.rs` is the seam (capabilities, lanes, `JobEvent`); one file per engine.
-- `core/src/ytdlp.rs`, `filename.rs`, `finishing.rs`, `failure.rs`: ports of the Swift parsing,
+- `dawnload-core/src/source.rs`: what was pasted, and Auto routing. `explain.rs`: the detection line.
+- `dawnload-core/src/engine/`: `mod.rs` is the seam (capabilities, lanes, `JobEvent`); one file per engine.
+- `dawnload-core/src/ytdlp.rs`, `filename.rs`, `finishing.rs`, `failure.rs`: ports of the Swift parsing,
   smart filenames, polish and error wording, with their tests.
-- `core/src/tools.rs`: discovery, official release sources, verification, updates.
-- `core/src/core.rs`: the actor and scheduler. `store.rs`: SQLite. `api.rs`: snapshot, diffs,
+- `dawnload-core/src/tools.rs`: discovery, official release sources, verification, updates.
+- `dawnload-core/src/core.rs`: the actor and scheduler. `store.rs`: SQLite. `api.rs`: snapshot, diffs,
   `Mirror`. `present.rs`: the row text from DESIGN.md.
-- `core/tests/scheduler.rs`: the queue's promises, with a scripted engine.
-- `ui/ui/app.slint`: the window. `ui/src/main.rs`: the bridge from the core to Slint.
+- `dawnload-core/tests/scheduler.rs`: the queue's promises, with a scripted engine.
+- `dawnload-ui/ui/app.slint`: the window. `dawnload-ui/src/main.rs`: the bridge from the core to Slint.
