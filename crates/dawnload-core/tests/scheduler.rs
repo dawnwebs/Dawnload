@@ -100,9 +100,16 @@ impl DownloadEngine for Scripted {
                     Err(JobError::Stopped)
                 }
                 "chatty" => {
+                    // Bursts of 20 events, then a pause. Sleeping after every event made the job's
+                    // length depend on the OS timer: ~0.8 s on macOS and Linux, ~6 s on Windows,
+                    // where a 2 ms sleep lasts a whole ~15.6 ms timer tick.
                     for i in 0..400u64 {
                         progress(i % 100);
-                        tokio::time::sleep(Duration::from_millis(2)).await;
+                        if i % 20 == 19 {
+                            tokio::time::sleep(Duration::from_millis(25)).await;
+                        } else {
+                            tokio::task::yield_now().await;
+                        }
                     }
                     Ok(JobOutcome::default())
                 }
@@ -289,7 +296,8 @@ async fn subscribers_get_batches_at_a_bounded_rate() {
         }
     }
     let elapsed = started.elapsed().as_secs_f64();
-    // ~800 job events in ~1 s, but at most one batch per 20 ms tick.
+    // 400 job events over about half a second (20 pauses of 25 ms, longer on a coarse timer),
+    // but at most one batch per 20 ms tick.
     assert!(batches as f64 <= elapsed / 0.020 + 3.0, "{batches} batches in {elapsed:.2}s");
     assert!(batches < 200, "{batches}");
     assert!(details > 0, "the watched item's detail arrives");
