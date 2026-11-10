@@ -17,7 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # x86-64 Linux and Windows, ARM Linux and Windows (free for public repos), and Apple
+        # Silicon macOS. The ARM builds also run natively in VMs on Apple Silicon Macs.
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
