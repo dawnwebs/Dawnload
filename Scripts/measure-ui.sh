@@ -38,6 +38,14 @@ footprint_mb() { # macOS "Memory" in Activity Monitor; Linux: proportional set s
   fi
 }
 
+display_note() { # Linux: which display protocol the app gets (winit prefers Wayland), and the renderer
+  [ "$OS" = "Linux" ] || return 0
+  if [ -n "${WAYLAND_DISPLAY:-}" ]; then printf ', Wayland'; elif [ -n "${DISPLAY:-}" ]; then printf ', X11'; fi
+  [ -n "${XDG_SESSION_TYPE:-}" ] && printf ' (%s session)' "$XDG_SESSION_TYPE"
+  [ -n "${SLINT_BACKEND:-}" ] && printf ', SLINT_BACKEND=%s' "$SLINT_BACKEND"
+  return 0
+}
+
 scenario() { # name, env...
   local name=$1; shift
   local log; log=$(mktemp)
@@ -67,7 +75,7 @@ scenario() { # name, env...
 {
   echo "# Dawnload UI measurement"
   echo
-  echo "$(uname -srm), $(date -u +%Y-%m-%dT%H:%MZ), ${SECONDS_PER}s per scenario after ${WARMUP}s warm-up, $BIN${XDG_SESSION_TYPE:+, $XDG_SESSION_TYPE session}${SLINT_BACKEND:+, SLINT_BACKEND=$SLINT_BACKEND}."
+  echo "$(uname -srm), $(date -u +%Y-%m-%dT%H:%MZ), ${SECONDS_PER}s per scenario after ${WARMUP}s warm-up, $BIN$(display_note)."
   echo
   echo "| Scenario | RSS avg (MB) | RSS peak (MB) | Footprint/PSS (MB) | CPU (one core) | Frames/s | Rows patched/s |"
   echo "|---|---|---|---|---|---|---|"
