@@ -11,6 +11,10 @@
 //! scrolls the list up and down forever; DAWNLOAD_UI_EXIT_AFTER=<seconds> quits;
 //! DAWNLOAD_DEMO_ITEMS=<n> changes the demo size.
 
+// Release builds on Windows are GUI apps, so no console window opens behind Dawnload. Redirected
+// stderr (the measurement scripts) still works; debug builds keep the console for logs.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
