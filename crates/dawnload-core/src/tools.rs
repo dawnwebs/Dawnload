@@ -453,9 +453,14 @@ impl ToolManager {
     }
 
     async fn install_venv(&self, tool: ToolId, package: &str, version: &str) -> Result<PathBuf, ToolError> {
+        let folders = self.search_folders();
         let python = ["python3", "python"]
             .iter()
-            .find_map(|name| self.find_on_system(&if cfg!(windows) { format!("{name}.exe") } else { name.to_string() }))
+            .map(|name| if cfg!(windows) { format!("{name}.exe") } else { name.to_string() })
+            .flat_map(|name| folders.iter().map(move |folder| folder.join(&name)))
+            // On a clean Windows, python.exe in …\Microsoft\WindowsApps is a Store stand-in that
+            // only prints "Python was not found" and offers the Store. It isn't Python.
+            .find(|path| is_executable(path) && !is_store_alias(path))
             .ok_or_else(|| {
                 err(format!(
                     "{} needs Python 3 on this system; install Python, or install {} with your package manager.",
@@ -611,6 +616,12 @@ fn exe(name: &str) -> String {
     if cfg!(windows) { format!("{name}.exe") } else { name.to_string() }
 }
 
+/// Windows' App Execution Aliases (`…\Microsoft\WindowsApps\python.exe`): stand-ins that open the
+/// Microsoft Store when the real program isn't installed.
+fn is_store_alias(path: &Path) -> bool {
+    path.to_string_lossy().to_ascii_lowercase().replace('\\', "/").contains("/microsoft/windowsapps/")
+}
+
 fn release_plan(package: ToolId) -> Option<ReleasePlan> {
     let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
     match package {
@@ -646,7 +657,9 @@ fn release_plan(package: ToolId) -> Option<ReleasePlan> {
             })
         }
         ToolId::GalleryDl => match (os, arch) {
-            ("linux", "x86_64") | ("windows", "x86_64") => {
+            // Windows on ARM runs the x64 gallery-dl.exe through Windows' own x64 emulation,
+            // which beats needing Python (a clean Windows has none).
+            ("linux", "x86_64") | ("windows", "x86_64") | ("windows", "aarch64") => {
                 let asset = if os == "windows" { "gallery-dl.exe" } else { "gallery-dl.bin" };
                 Some(ReleasePlan {
                     kind: ReleaseKind::Forgejo { api: "https://codeberg.org/api/v1/repos/mikf/gallery-dl/releases/latest" },
@@ -924,6 +937,14 @@ mod tests {
         );
         assert_eq!(parse_version(ToolId::GalleryDl, "1.32.19").as_deref(), Some("1.32.19"));
         assert!(same_version("v2.9.8", "2.9.8"));
+    }
+
+    #[test]
+    fn skips_windows_store_aliases() {
+        assert!(is_store_alias(Path::new(r"C:\Users\me\AppData\Local\Microsoft\WindowsApps\python.exe")));
+        assert!(is_store_alias(Path::new("/c/Users/me/AppData/Local/Microsoft/windowsapps/python3.exe")));
+        assert!(!is_store_alias(Path::new(r"C:\Users\me\AppData\Local\Programs\Python\Python313\python.exe")));
+        assert!(!is_store_alias(Path::new("/usr/bin/python3")));
     }
 
     #[test]
