@@ -1,6 +1,6 @@
 # 0008 · Slint prototype: measured, Slint confirmed
 
-Status: Accepted, final (2026-11-10). The owner confirmed Slint, with its royalty-free licence (ADR 0009). Windows and Linux measurements are still to be recorded.
+Status: Accepted, final (2026-11-10). The owner confirmed Slint, with its royalty-free licence (ADR 0009). Windows measured on 2026-11-12 (below); Linux still to be recorded.
 
 ## Context
 
@@ -52,6 +52,47 @@ Footprint is macOS's `phys_footprint` (Activity Monitor's "Memory").
   an option for machines without working GPU drivers.
 - Binaries (release, arm64): `dawnload-app` 22.9 MB, `dawnload` 9.6 MB.
 
+## Measurements (Windows 11 on ARM)
+
+Windows 11 24H2 (build 26100) ARM64 in a VMPal VM on Apple Silicon, virtual GPU, the CI build of
+`f1fc321`+`1bbb6de` (`windows-11-arm` runner, static C runtime). `Scripts/measure-ui.ps1 -Bin`:
+8 s warm-up, then 30 s per scenario. Memory is the working set (Task Manager's "Memory" is the
+private column); CPU is the whole process as a share of one core.
+
+| Scenario | Working set avg | Peak | Private | CPU | Frames/s | Rows patched/s |
+|---|---|---|---|---|---|---|
+| Idle, empty list | 80.2 MB | 80.2 MB | 45.0 MB | 0.1% | 0 | 0 |
+| Idle, 500 items updating | 83.1 MB | 84.8 MB | 48.2 MB | 11.6% | 12 | 1,412 |
+| Scrolling, 500 items updating | 83.6 MB | 85.5 MB | 48.4 MB | 27.0% | 53 | 1,410 |
+| Scrolling, 500 items, every row's fill eased | 83.9 MB | 85.1 MB | 48.7 MB | 27.9% | 63 | 1,421 |
+
+- **Memory is under target and lower than on macOS** (80 MB idle). CPU is about twice the Mac's,
+  which a VM's virtual GPU explains; real hardware should land closer to the Mac numbers. Treat
+  these as a worst case.
+- Light and dark, the inspector (swarm, files, options, log) and the theme toggle all render
+  correctly. Binaries (release, ARM64): `dawnload-app.exe` 20.7 MB, `dawnload.exe` 8.7 MB.
+
+![Windows, light, 500 items](assets/prototype-windows-light.jpg)
+![Windows, dark, inspector](assets/prototype-windows-dark.jpg)
+
+What the first run on a clean Windows found, all fixed on this branch:
+- **It didn't start**: `VCRUNTIME140.dll was not found`. A clean Windows has no Visual C++
+  runtime; CI runners do. Binaries now link it statically (`.cargo/config.toml`, and CI's
+  `RUSTFLAGS`).
+- **An empty console window** opened behind the app. Release builds now use the GUI subsystem.
+- **The chips' ▾ showed as an empty box**: Segoe UI has no U+25BE. Drawn as a path now.
+- **gallery-dl couldn't install on ARM Windows**: the installer fell back to pip and picked the
+  Microsoft Store's `python.exe` stand-in. ARM Windows now gets the official `gallery-dl.exe`
+  (x64, through Windows' emulation), and Store aliases are skipped when looking for Python.
+
+The CLI on the same VM: `tools install` installed and verified yt-dlp, ffmpeg/ffprobe and deno
+(ARM64 builds); `get` downloaded the Blender short (yt-dlp, ffmpeg polish, smart filename,
+743 MB); the HTTP engine killed mid-download came back Paused, resumed ("Continuing … from
+246.4 MB") and the file's SHA-256 matched a reference copy. Seen once and not reproduced in two
+more tries: after a kill at 86%, the `.dawnload-state` sidecar was missing, so Resume started a new
+file (`… 2.zip`) and left the old `.dawnload-part` behind. Worth a test that kills during the
+state write, and a fallback that reuses a same-name part file from the same URL.
+
 For comparison (not measured here): a Tauri window is a system webview process tree, typically
 150–300 MB on Windows with WebView2 before any app state, and a list of 500 updating DOM rows
 needs its own virtualization.
@@ -71,8 +112,9 @@ Two choices follow from the numbers:
 
 ## Still to prove (phase 3 gates)
 
-- **Windows and Linux numbers.** Run `Scripts/measure-ui.ps1` on Windows 11 and
-  `Scripts/measure-ui.sh` on a Linux desktop (X11 and Wayland). Same targets. Not run yet.
+- **Linux numbers.** Run `Scripts/measure-ui.sh` on a Linux desktop (X11 and Wayland), starting
+  with Ubuntu 24.04 LTS, then Fedora. Same targets. Windows on ARM is done (above); Windows on an
+  x64 PC is still worth one run on real hardware.
 - Accessibility with real screen readers (Narrator, Orca, VoiceOver): rows set an accessible
   label, but nothing has been tested with assistive technology.
 - IME and paste of non-Latin text in the paste field; HiDPI on Windows at 150%/175%.

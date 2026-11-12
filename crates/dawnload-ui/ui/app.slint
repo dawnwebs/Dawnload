@@ -192,6 +192,9 @@ component Pill inherits Rectangle {
     in property <bool> primary;
     in property <bool> enabled: true;
     in property <string> mark;
+    // A menu chip's ▾, drawn as a path: Segoe UI (Windows) has no U+25BE, so as text it showed
+    // as an empty box there.
+    in property <bool> chevron;
     callback clicked;
     height: 28px;
     border-radius: self.height / 2;
@@ -210,6 +213,14 @@ component Pill inherits Rectangle {
             text: root.label; vertical-alignment: center;
             color: root.primary ? Theme.on-action : root.on ? Theme.text : Theme.text2;
             font-size: 12px; font-weight: root.primary ? 700 : 500;
+        }
+        if root.chevron : Path {
+            width: 8px; height: 5px;
+            y: (parent.height - self.height) / 2;
+            viewbox-width: 8; viewbox-height: 5;
+            commands: "M 1 1 L 4 4 L 7 1";
+            stroke: Theme.text2; stroke-width: 1.5px;
+            stroke-line-cap: round; stroke-line-join: round;
         }
     }
     touch := TouchArea {
@@ -490,8 +501,8 @@ export component AppWindow inherits Window {
                     }
                     HorizontalLayout {
                         spacing: 8px; alignment: start;
-                        Pill { label: root.chip-format + " ▾"; on: true; clicked => { root.cycle-format(); } }
-                        Pill { label: root.chip-engine + " ▾"; on: true; clicked => { root.cycle-engine(); } }
+                        Pill { label: root.chip-format; chevron: true; on: true; clicked => { root.cycle-format(); } }
+                        Pill { label: root.chip-engine; chevron: true; on: true; clicked => { root.cycle-engine(); } }
                         Pill { label: "Polish"; mark: root.chip-polish ? "✓" : ""; on: root.chip-polish; clicked => { root.toggle-polish(); } }
                         Pill { label: "Playlist"; mark: root.chip-playlist ? "✓" : ""; on: root.chip-playlist; clicked => { root.toggle-playlist(); } }
                         Rectangle { horizontal-stretch: 1; }

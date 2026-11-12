@@ -26,8 +26,10 @@ Nothing in the Rust work touches `Sources/`, `Tests/` or `Package.swift`.
 - The UI-facing API: snapshot plus batched diffs, `Mirror` ([0002](adr/0002-core-owns-state-snapshot-and-diffs.md)).
 - CI on Windows, Linux and macOS with a dependency licence check.
 
-Verified on macOS only. Windows and Linux: CI builds and tests are written but haven't run yet,
-and the tool installers for those OSes haven't downloaded anything there.
+CI builds and tests pass on Windows and Linux (x64 and ARM64) and macOS. On a clean Windows 11
+ARM VM (2026-11-12) the CLI installed its tools, downloaded a video and a resumed HTTP file; that
+run found and fixed four Windows issues ([0008](adr/0008-slint-prototype-verdict.md)). Linux has
+only run in CI so far.
 
 ## 2 · UI prototype · done (2026-11-09)
 
@@ -35,7 +37,8 @@ and the tool installers for those OSes haven't downloaded anything there.
 measured. **Verdict: Slint confirmed** on macOS: 96 MB idle, 13.6% of one core while scrolling
 500 updating rows at full rate ([0008](adr/0008-slint-prototype-verdict.md)).
 The owner confirmed Slint and its royalty-free licence on 2026-11-10 ([0009](adr/0009-licensing.md)).
-Open: the same measurements on Windows and Linux (`Scripts/measure-ui.ps1`, `Scripts/measure-ui.sh`).
+Windows 11 on ARM (VM, 2026-11-12): 80 MB idle, 84 MB and 27% of one core while scrolling 500
+updating rows at 53–63 frames/s. Open: the same on Linux (`Scripts/measure-ui.sh`).
 
 ## 3 · The full app, Windows first
 
