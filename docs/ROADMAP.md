@@ -28,8 +28,10 @@ Nothing in the Rust work touches `Sources/`, `Tests/` or `Package.swift`.
 
 CI builds and tests pass on Windows and Linux (x64 and ARM64) and macOS. On a clean Windows 11
 ARM VM (2026-11-12) the CLI installed its tools, downloaded a video and a resumed HTTP file; that
-run found and fixed four Windows issues ([0008](adr/0008-slint-prototype-verdict.md)). Linux has
-only run in CI so far.
+run found and fixed four Windows issues ([0008](adr/0008-slint-prototype-verdict.md)). The same on
+a stock Ubuntu 24.04 ARM VM (2026-11-12): tools, the video and the resumed HTTP file all worked
+once gallery-dl's install stopped needing `python3-venv`; an orphaned part file after a lost
+state is now restarted in place.
 
 ## 2 · UI prototype · done (2026-11-09)
 
@@ -38,7 +40,9 @@ measured. **Verdict: Slint confirmed** on macOS: 96 MB idle, 13.6% of one core w
 500 updating rows at full rate ([0008](adr/0008-slint-prototype-verdict.md)).
 The owner confirmed Slint and its royalty-free licence on 2026-11-10 ([0009](adr/0009-licensing.md)).
 Windows 11 on ARM (VM, 2026-11-12): 80 MB idle, 84 MB and 27% of one core while scrolling 500
-updating rows at 53–63 frames/s. Open: the same on Linux (`Scripts/measure-ui.sh`).
+updating rows at 53–63 frames/s. Ubuntu 24.04 on ARM (VM, Wayland, 2026-11-12): 115 MB RSS of
+which 55 MB private (65 MB PSS), ~0% idle, 22% of one core scrolling at 63 frames/s; X11 through
+Xwayland the same. Still worth a run: real Xorg, x64 hardware, Fedora or KDE.
 
 ## 3 · The full app, Windows first
 

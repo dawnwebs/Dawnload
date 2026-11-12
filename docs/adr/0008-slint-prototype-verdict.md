@@ -1,6 +1,6 @@
 # 0008 · Slint prototype: measured, Slint confirmed
 
-Status: Accepted, final (2026-11-10). The owner confirmed Slint, with its royalty-free licence (ADR 0009). Windows measured on 2026-11-12 (below); Linux still to be recorded.
+Status: Accepted, final (2026-11-10). The owner confirmed Slint, with its royalty-free licence (ADR 0009). Windows and Linux (Ubuntu 24.04 on ARM) measured on 2026-11-12 (below).
 
 ## Context
 
@@ -93,6 +93,85 @@ more tries: after a kill at 86%, the `.dawnload-state` sidecar was missing, so R
 file (`… 2.zip`) and left the old `.dawnload-part` behind. Worth a test that kills during the
 state write, and a fallback that reuses a same-name part file from the same URL.
 
+## Measurements (Ubuntu 24.04 on ARM)
+
+Ubuntu 24.04.5 LTS (kernel 7.0 HWE, glibc 2.39) ARM64 in a VMPal VM on an M1 Pro Mac, GNOME 46
+on Wayland, a 2880×1696 display at 120 Hz and scale 2. The virtual GPU is virtio-gpu with virgl,
+so OpenGL reaches the Mac's GPU (`virgl (Apple M1 Pro)`). The CI build of `7866910`
+(`ubuntu-24.04-arm` runner) ran on the stock install: no missing libraries, nothing to install
+first. `BIN=./dawnload-app ./measure-ui.sh`: 8 s warm-up, then 30 s per scenario. PSS is each
+shared page divided among the processes that map it; CPU is the whole process as a share of one
+core.
+
+| Scenario | RSS avg | Peak | PSS | CPU | Frames/s | Rows patched/s |
+|---|---|---|---|---|---|---|
+| Idle, empty list | 115.3 MB | 115.3 MB | 65.7 MB | 0.2% | 0 | 0 |
+| Idle, 500 items updating | 114.7 MB | 114.8 MB | 65.3 MB | 12.7% | 8 | 1,417 |
+| Scrolling, 500 items updating | 114.8 MB | 115.0 MB | 65.4 MB | 22.0% | 63 | 1,403 |
+| Scrolling, 500 items, every row's fill eased | 115.0 MB | 115.1 MB | 65.5 MB | 21.9% | 91 | 1,400 |
+
+- **Memory is at the target by what it costs the system, over it by RSS.** RSS is 115 MB, but
+  62 MB of that is shared (Mesa's gallium driver, fonts, system libraries); private memory is
+  55 MB (Windows: 45 MB) and PSS 65 MB.
+- **Scrolling is smooth**: every 16 ms scroll step is drawn (63 frames/s; 91 with eased fills),
+  for 22% of one core in a VM. Idle with nothing happening, no measurable CPU.
+- **X11 through Xwayland** (`WAYLAND_DISPLAY` unset): 110 MB RSS, 61 MB PSS, 0.2% idle, 21.6%
+  while scrolling at 91 frames/s. The window gets Mutter's own title bar.
+- **The software renderer** (`SLINT_BACKEND=winit-software`): 60 MB RSS, 42 MB PSS, 18% of one
+  core while scrolling; it draws and scrolls crisply at 2×. Its frames aren't counted: the
+  frame counter uses Slint's rendering notifier, which only the OpenGL renderers have.
+- HiDPI is right at scale 2 (sharp text and glyphs, correct sizes). Light and dark, the
+  inspector and the drawn ▾ on the Format and Engine chips render as on the Mac. Pasting a link
+  copied in GNOME Text Editor works (Ctrl+V), and the detection line follows.
+- Binaries (release, ARM64): `dawnload-app` 37.2 MB, `dawnload` 11.4 MB. They keep their symbol
+  tables (`strip = "debuginfo"`); stripped they are 27.6 MB and 8.6 MB.
+
+![Linux, light, inspector](assets/prototype-linux-light.jpg)
+![Linux, dark (following the system), inspector](assets/prototype-linux-dark.jpg)
+
+The CLI on the same VM: `tools install` installed and verified yt-dlp 2026.10.26,
+ffmpeg/ffprobe (FFmpeg-Builds' linuxarm64 build) and deno 2.9.8 in 26 s, and each runs. `get` downloaded
+the Blender short in 34 s: AV1 3840×2160 at 60 frames/s with AAC, merged, remuxed to MP4 with
+metadata (Polish), named `Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film.mp4`
+(743.4 MB, 634.6 s by ffprobe). The HTTP engine, killed with SIGKILL at 93%, came back Paused;
+`resume` and `run` said "Continuing … from 386.3 MB" and the file's SHA-256 matched a copy
+downloaded on the Mac. Twelve more kills (SIGKILL and SIGTERM, from 2% to the last second) all
+left the part file and its state together, and every resume continued and matched. The
+Windows case (state missing after a kill) didn't happen here; it is handled now anyway (below).
+
+Found on Ubuntu and fixed on this branch:
+- **gallery-dl didn't install**: there is no official ARM64 Linux binary, so Dawnload makes a
+  Python virtual environment, and Ubuntu's Python has no `ensurepip` without the `python3-venv`
+  package. The environment is now made without pip, and pip runs from its own wheel, fetched
+  from PyPI and checked against PyPI's SHA-256 (also on macOS, which uses the same path).
+- **The app was dark on a light Ubuntu**: GNOME's Light appearance is `color-scheme 'default'`,
+  which the settings portal reports as "no preference", and the prototype treated anything but
+  "light" as dark (DESIGN.md's default). On Linux, "no preference" now means light; elsewhere
+  the system always says which.
+- **A part file without its state was orphaned** (the Windows report): Resume picked a new
+  `name 2.ext` and left the old `.dawnload-part` behind. The item's own part is now continued
+  when its state matches and started again in place when the state is missing; a part whose
+  state names another link is left alone. Tests cover both; on the VM, deleting the state after
+  a kill now gives "No saved progress … starting it again", the same file name and a matching
+  SHA-256. If Windows refuses the state's
+  atomic rename (an indexer or antivirus holding the file), the state is now written in place.
+
+Open, for phase 3:
+- No `.desktop` file or app ID yet, so GNOME's dock shows the window as "Unknown" with a
+  generic icon. Packaging (Flathub, AppImage) brings both.
+- The title bar on Wayland is winit's own client-side decoration, not GNOME's (Adwaita) style.
+  It follows the system's light or dark, but not the header's Light/Dark toggle, which only
+  recolours the content. Settings' Appearance should also set the window's theme.
+- Accessibility: with the AT-SPI bus turned on (as a screen reader does), the window's tree is
+  there: rows are list items labelled with title and status, the paste field is an editable
+  entry. But the chips, Download, Pause All and the header pills come through as plain labels,
+  not buttons, and the ↗ and ✓ glyphs as labels of their own. They need accessible roles. Orca
+  itself is untested (as Narrator and VoiceOver are).
+- `dawnload resume` starts the job inside its own short-lived process and pauses it again on
+  exit, which writes a "Started … Paused." pair to the item's log before `run` continues it.
+- `dawnload list` after a kill showed the store's last saved progress (78%, 325 MB) while the
+  sidecar had 386 MB; Resume goes by the sidecar, so only the shown number lags.
+
 For comparison (not measured here): a Tauri window is a system webview process tree, typically
 150–300 MB on Windows with WebView2 before any app state, and a list of 500 updating DOM rows
 needs its own virtualization.
@@ -112,9 +191,10 @@ Two choices follow from the numbers:
 
 ## Still to prove (phase 3 gates)
 
-- **Linux numbers.** Run `Scripts/measure-ui.sh` on a Linux desktop (X11 and Wayland), starting
-  with Ubuntu 24.04 LTS, then Fedora. Same targets. Windows on ARM is done (above); Windows on an
-  x64 PC is still worth one run on real hardware.
+- **More Linux.** Ubuntu 24.04 on ARM is done (above: Wayland, and X11 through Xwayland, in a
+  VM). Still worth one run each: a real Xorg session, x64 hardware with a real GPU, and Fedora
+  (GNOME) or KDE Plasma. Windows on ARM is done (above); Windows on an x64 PC is still worth one
+  run on real hardware.
 - Accessibility with real screen readers (Narrator, Orca, VoiceOver): rows set an accessible
   label, but nothing has been tested with assistive technology.
 - IME and paste of non-Latin text in the paste field; HiDPI on Windows at 150%/175%.
