@@ -29,6 +29,11 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          # rust-cache keys by OS and CPU only ("Linux-x64"), so ubuntu-24.04 restored the old
+          # ubuntu-latest (26.04) build and rustc couldn't load the cached slint crate. One cache
+          # per runner image.
+          key: ${{ matrix.os }}
       - name: Static C runtime on Windows
         # RUSTFLAGS replaces .cargo/config.toml's rustflags, so CI repeats +crt-static here.
         # Without it the .exe needs VCRUNTIME140.dll, which a clean Windows doesn't have.
