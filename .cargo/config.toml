@@ -1,0 +1,5 @@
+# Link the Visual C++ runtime into Windows binaries, so Dawnload starts on a clean Windows
+# install without the VC++ Redistributable (VCRUNTIME140.dll). CI sets the same flag through
+# RUSTFLAGS, which replaces these settings when it's set.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

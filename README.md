@@ -152,6 +152,14 @@ torrent states, `-appearance light` for Paper).
 Logic that does not need a window lives in `DawnloadCore` so it can be unit
 tested on any CI runner.
 
+### Cross-platform Dawnload (in progress)
+
+Dawnload is moving to one codebase for Windows, Linux and macOS: a Rust core
+and a Slint UI under `crates/`, beside this Swift app, which stays the Mac app
+until the new one matches it. See [crates/README.md](crates/README.md) to build
+and try it, [docs/ROADMAP.md](docs/ROADMAP.md) for the plan, and
+[docs/adr/](docs/adr/README.md) for the decisions.
+
 ## Contributing
 
 Pull requests and issues are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)

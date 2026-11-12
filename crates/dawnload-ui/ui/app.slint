@@ -1,0 +1,692 @@
+// Dawnload's main window, from docs/DESIGN.md. One toolkit draws everything; the Rust side feeds
+// it rows built from the core's snapshot + diff stream (see src/main.rs).
+
+import { ListView, ScrollView, Palette } from "std-widgets.slint";
+import "fonts/MartianMono-Medium.ttf";
+import "fonts/MartianMono-Bold.ttf";
+import "fonts/Unbounded-ExtraBold.ttf";
+
+// MARK: - Tokens (docs/brand/web/dawnload-tokens.json)
+
+export global Theme {
+    // 0 follows the system, 1 dark, 2 light.
+    in-out property <int> mode: 0;
+    // When the system states no preference: dark, Dawnload's default (DESIGN.md), except where
+    // "no preference" is how the desktop says light. GNOME's Light appearance is
+    // `color-scheme 'default'`, which the portal reports as no preference; main.rs sets this on Linux.
+    in property <bool> no-preference-is-light: false;
+    out property <bool> dark: mode == 0
+        ? (Palette.color-scheme == ColorScheme.dark || (Palette.color-scheme != ColorScheme.light && !no-preference-is-light))
+        : mode == 1;
+
+    out property <color> canvas: dark ? #07140E : #F2F8F3;
+    out property <color> raised: dark ? #0F2219 : #FFFFFF;
+    out property <color> rule: dark ? #1B3428 : #DCE9DF;
+    out property <color> track: dark ? #1B3428 : #DCE9DF;
+    out property <color> text: dark ? #F2F8F3 : #07140E;
+    out property <color> text2: dark ? #9DC4AE : #4C6B5A;
+    out property <color> action: #17D36E;
+    out property <color> on-action: #07140E;
+    out property <color> link: dark ? #17D36E : #0B7A3E;
+    out property <color> progress: #17D36E;
+    out property <color> kept: dark ? #17D36E : #0B7A3E;
+    out property <color> failed: dark ? #FF6B5C : #B8261A;
+
+    out property <string> mono: "Martian Mono";
+    out property <string> display: "Unbounded";
+
+    out property <length> radius-spine: 6px;
+    out property <length> radius-card: 20px;
+}
+
+// Status codes shared with Rust (src/main.rs › status_code).
+export global S {
+    out property <int> queued: 0;
+    out property <int> pulling: 1;
+    out property <int> polishing: 2;
+    out property <int> kept: 3;
+    out property <int> failed: 4;
+    out property <int> paused: 5;
+    out property <int> seeding: 6;
+}
+
+export struct RowData {
+    // 0 = section header, 1 = item.
+    kind: int,
+    id: int,
+    title: string,
+    subline: string,
+    trailing: string,
+    status: int,
+    fill: float,
+    // Headers.
+    header: string,
+    count: int,
+    torrent: bool,
+}
+
+export struct FilterTab {
+    title: string,
+    count: int,
+}
+
+export struct FileRow {
+    name: string,
+    size: string,
+}
+
+export struct InspectorData {
+    present: bool,
+    id: int,
+    title: string,
+    word: string,
+    status: int,
+    fill: float,
+    source: string,
+    percent: string,
+    numbers: string,
+    torrent: bool,
+    peers: string,
+    seeds: string,
+    down: string,
+    up: string,
+    uploaded: string,
+    ratio: string,
+    options: string,
+    engine: string,
+    failure: string,
+    hint: string,
+    log: string,
+    primary: string,
+}
+
+// MARK: - The Cut D (docs/brand/source/geo.py; Sources/Dawnload/Design/CutD.swift)
+
+component CutD inherits Rectangle {
+    in property <int> status;
+    in property <float> fill;
+    // The colour cuts are punched with (the row behind the glyph).
+    in property <color> punch: Theme.canvas;
+    // Ease the fill between samples (the inspector). Rows step instead: hundreds of rows easing
+    // at once would keep the window redrawing at full frame rate.
+    in property <bool> eased: false;
+    private property <length> s: self.height / 2;
+    private property <string> d: "M 0.53 0 A 1 1 0 0 1 0.53 2 L 0.18 2 Q 0 2 0 1.82 L 0 0.18 Q 0 0 0.18 0 Z";
+    private property <color> body: status == S.failed ? Theme.failed
+        : status == S.kept || status == S.seeding ? Theme.kept
+        : status == S.paused || status == S.queued ? Theme.text2
+        : Theme.progress;
+    private property <float> filled: status == S.queued ? 0 : status == S.pulling || status == S.paused ? fill : 1;
+    width: self.height * 0.765;
+    animate filled { duration: eased ? 200ms : 0ms; easing: linear; }
+
+    // The empty part of the D.
+    if status != S.queued : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: root.d;
+        fill: Theme.track;
+    }
+    // The fill, from the top.
+    Rectangle {
+        y: 0; width: parent.width; height: parent.height * root.filled;
+        clip: true;
+        Path {
+            y: 0; width: root.width; height: root.height;
+            viewbox-width: 1.53; viewbox-height: 2;
+            commands: root.d;
+            fill: root.body;
+        }
+    }
+    // Queued: the D in outline with three dots.
+    if status == S.queued : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: root.d + " M 0.6428 0.24 A 0.76 0.76 0 0 0 0.6428 1.76 L 0.3768 1.76 Q 0.24 1.76 0.24 1.6232 L 0.24 0.3768 Q 0.24 0.24 0.3768 0.24 Z";
+        fill: root.body;
+    }
+    if status == S.queued : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.415 1 L 0.415 1 M 0.765 1 L 0.765 1 M 1.115 1 L 1.115 1";
+        stroke: root.body; stroke-width: root.s * 0.22; stroke-line-cap: round;
+    }
+    // The cut for each state.
+    if status == S.pulling : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.765 0.48 L 0.765 1.4 M 0.325 0.96 L 0.765 1.4 L 1.205 0.96";
+        stroke: root.punch; stroke-width: root.s * 0.32; stroke-line-cap: round;
+    }
+    if status == S.seeding : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.765 1.52 L 0.765 0.6 M 0.325 1.04 L 0.765 0.6 L 1.205 1.04";
+        stroke: root.punch; stroke-width: root.s * 0.32; stroke-line-cap: round;
+    }
+    if status == S.kept : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.365 1.02 L 0.665 1.32 L 1.185 0.74";
+        stroke: root.punch; stroke-width: root.s * 0.34; stroke-line-cap: round;
+    }
+    if status == S.failed : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.765 0.52 L 0.765 1.08 M 0.765 1.44 L 0.765 1.44";
+        stroke: root.punch; stroke-width: root.s * 0.34; stroke-line-cap: round;
+    }
+    if status == S.paused : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.565 0.64 L 0.565 1.36 M 0.965 0.64 L 0.965 1.36";
+        stroke: root.punch; stroke-width: root.s * 0.3; stroke-line-cap: round;
+    }
+    if status == S.polishing : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.405 0.54 L 0.765 0.94 L 1.125 0.54 M 0.765 0.94 L 0.765 1.46";
+        stroke: root.punch; stroke-width: root.s * 0.3; stroke-line-cap: round;
+    }
+}
+
+// MARK: - Small parts
+
+component Pill inherits Rectangle {
+    in property <string> label;
+    in property <bool> on;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    in property <string> mark;
+    // A menu chip's ▾, drawn as a path: Segoe UI (Windows) has no U+25BE, so as text it showed
+    // as an empty box there.
+    in property <bool> chevron;
+    callback clicked;
+    height: 28px;
+    border-radius: self.height / 2;
+    background: primary ? (touch.pressed ? Theme.action.darker(10%) : Theme.action) : on ? Theme.raised : transparent;
+    border-width: primary ? 0 : 1px;
+    border-color: on ? Theme.rule.brighter(10%) : Theme.rule;
+    opacity: enabled ? 1 : 0.45;
+    HorizontalLayout {
+        padding-left: 12px; padding-right: 12px; spacing: 6px;
+        if root.mark != "" : Text {
+            text: root.mark; vertical-alignment: center;
+            color: root.primary ? Theme.on-action : Theme.link;
+            font-weight: 700;
+        }
+        Text {
+            text: root.label; vertical-alignment: center;
+            color: root.primary ? Theme.on-action : root.on ? Theme.text : Theme.text2;
+            font-size: 12px; font-weight: root.primary ? 700 : 500;
+        }
+        if root.chevron : Path {
+            width: 8px; height: 5px;
+            y: (parent.height - self.height) / 2;
+            viewbox-width: 8; viewbox-height: 5;
+            commands: "M 1 1 L 4 4 L 7 1";
+            stroke: Theme.text2; stroke-width: 1.5px;
+            stroke-line-cap: round; stroke-line-join: round;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component SectionHeader inherits Rectangle {
+    in property <string> title;
+    in property <int> count;
+    height: 32px;
+    HorizontalLayout {
+        padding-left: 24px; padding-right: 24px; spacing: 8px;
+        alignment: start;
+        Text {
+            text: root.title; vertical-alignment: bottom;
+            color: Theme.text2; font-size: 11px; font-weight: 700;
+            letter-spacing: 0.6px;
+        }
+        Text {
+            text: root.count; vertical-alignment: bottom;
+            color: Theme.text2; font-family: Theme.mono; font-size: 10px; font-weight: 700;
+        }
+    }
+}
+
+component ItemRow inherits Rectangle {
+    in property <RowData> data;
+    in property <bool> selected;
+    in property <bool> eased;
+    callback clicked;
+    callback double-clicked;
+    height: 60px;
+    background: selected ? Theme.raised : touch.has-hover ? Theme.raised.with-alpha(0.45) : transparent;
+    accessible-role: list-item;
+    accessible-label: root.data.title + ", " + root.data.subline;
+    // The spine: a selected row shows the D's straight edge.
+    if root.selected : Rectangle {
+        x: 0; width: 3px; height: parent.height;
+        background: Theme.link;
+    }
+    HorizontalLayout {
+        padding-left: 24px; padding-right: 24px; spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            CutD {
+                height: 32px;
+                status: root.data.status;
+                fill: root.data.fill;
+                eased: root.eased;
+                punch: root.background == transparent ? Theme.canvas : Theme.raised;
+            }
+        }
+        VerticalLayout {
+            alignment: center; spacing: 4px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.data.title;
+                color: Theme.text; font-size: 13px; font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.data.subline;
+                color: root.data.status == S.failed ? Theme.failed : Theme.text2;
+                font-family: Theme.mono; font-size: 11px;
+                overflow: elide;
+            }
+        }
+        if root.data.trailing != "" : Text {
+            text: root.data.trailing; vertical-alignment: center;
+            color: Theme.text; font-family: Theme.mono; font-size: 12px; font-weight: 700;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+        double-clicked => { root.double-clicked(); }
+    }
+}
+
+component Stat inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 2px;
+    Text { text: root.label; color: Theme.text2; font-size: 11px; }
+    Text { text: root.value; color: Theme.text; font-family: Theme.mono; font-size: 12px; }
+}
+
+component InspectorSection inherits VerticalLayout {
+    in property <string> title;
+    spacing: 8px;
+    Rectangle { height: 1px; background: Theme.rule; }
+    Text { text: root.title; color: Theme.text2; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; }
+    @children
+}
+
+// MARK: - The window
+
+export component AppWindow inherits Window {
+    title: "Dawnload";
+    preferred-width: 1080px;
+    preferred-height: 720px;
+    min-width: 780px;
+    min-height: 540px;
+    background: Theme.canvas;
+    default-font-size: 13px;
+
+    // Intake
+    in-out property <string> paste-text;
+    in property <string> detection;
+    // 0 neutral, 1 warning, 2 failed.
+    in property <int> detection-tone;
+    in property <bool> can-submit: true;
+    in property <string> chip-format: "Best";
+    in property <string> chip-engine: "Auto";
+    in property <bool> chip-polish: true;
+    in property <bool> chip-playlist: false;
+    in property <string> chip-folder: "Dawnload";
+    // Header
+    in property <string> tools-text: "Checking tools";
+    in property <bool> tools-ok: true;
+    in property <string> mode-note;
+    // List
+    in property <[RowData]> rows;
+    in property <[FilterTab]> filters;
+    in-out property <int> filter: 0;
+    in property <string> queue-label;
+    in property <string> empty-line: "Paste a link to start.";
+    in-out property <int> selected-id: -1;
+    in-out property <length> list-scroll <=> list.content-y;
+    out property <length> list-height: list.visible-height;
+    // Inspector
+    in property <InspectorData> inspector;
+    in property <[FileRow]> inspector-files;
+    in-out property <bool> show-inspector: true;
+    // Measurement switch: ease every row's fill (see Scripts/measure-ui.sh).
+    in property <bool> ease-rows: false;
+
+    callback paste-edited(string);
+    callback download();
+    callback cycle-format();
+    callback cycle-engine();
+    callback toggle-polish();
+    callback toggle-playlist();
+    callback select-filter(int);
+    callback select(int);
+    callback queue-action();
+    callback primary-action(int);
+    callback remove(int);
+    callback move-selection(int);
+
+    forward-focus: keys;
+
+    keys := FocusScope {
+        width: 0; height: 0;
+        key-pressed(event) => {
+            if (event.text == Key.UpArrow) { root.move-selection(-1); return accept; }
+            if (event.text == Key.DownArrow) { root.move-selection(1); return accept; }
+            if ((event.text == Key.Delete || event.text == Key.Backspace) && root.selected-id >= 0) {
+                root.remove(root.selected-id); return accept;
+            }
+            if (event.text == Key.Return && root.selected-id >= 0) { root.primary-action(root.selected-id); return accept; }
+            if (event.text == Key.Escape) { root.selected-id = -1; root.select(-1); return accept; }
+            if (event.modifiers.control || event.modifiers.meta) && event.text == "l" { paste.focus(); return accept; }
+            reject
+        }
+    }
+
+    // The inspector hides itself below 960 px of window width.
+    private property <length> inspector-width: root.show-inspector && root.width >= 960px ? 300px : 0px;
+
+    Rectangle {
+            // MARK: Main column
+            VerticalLayout {
+                x: 0; y: 0;
+                width: parent.width - root.inspector-width;
+                height: parent.height;
+
+                // Header
+                Rectangle {
+                    height: 52px;
+                    HorizontalLayout {
+                        padding-left: 24px; padding-right: 16px; spacing: 10px;
+                        Image {
+                            source: @image-url("../../../docs/brand/logo/dawnload-mark.svg");
+                            height: 18px; width: 15px; y: (parent.height - self.height) / 2;
+                        }
+                        Image {
+                            source: Theme.dark ? @image-url("../../../docs/brand/logo/dawnload-wordmark-paper.svg") : @image-url("../../../docs/brand/logo/dawnload-wordmark-ink.svg");
+                            height: 14px; width: 92px; y: (parent.height - self.height) / 2;
+                            image-fit: contain;
+                        }
+                        if root.mode-note != "" : Text {
+                            text: root.mode-note; vertical-alignment: center;
+                            color: Theme.text2; font-family: Theme.mono; font-size: 10px;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        // The tools pill.
+                        Rectangle {
+                            height: 26px; y: (parent.height - self.height) / 2;
+                            width: tools-row.preferred-width;
+                            border-radius: 13px; border-width: 1px; border-color: Theme.rule;
+                            tools-row := HorizontalLayout {
+                                padding-left: 10px; padding-right: 12px; spacing: 6px;
+                                Rectangle {
+                                    width: 7px; height: 7px; y: (parent.height - self.height) / 2; border-radius: 3.5px;
+                                    background: root.tools-ok ? Theme.kept : Theme.failed;
+                                }
+                                Text { text: root.tools-text; vertical-alignment: center; color: Theme.text2; font-size: 11px; }
+                            }
+                        }
+                        Pill {
+                            y: (parent.height - self.height) / 2;
+                            label: Theme.dark ? "Dark" : "Light";
+                            clicked => { Theme.mode = Theme.dark ? 2 : 1; }
+                        }
+                        Pill {
+                            y: (parent.height - self.height) / 2;
+                            label: "Inspector"; on: root.show-inspector;
+                            clicked => { root.show-inspector = !root.show-inspector; }
+                        }
+                    }
+                }
+
+                // Intake
+                VerticalLayout {
+                    padding-left: 24px; padding-right: 24px; padding-top: 4px; spacing: 8px;
+                    Rectangle {
+                        height: 56px;
+                        background: Theme.raised;
+                        border-radius: Theme.radius-spine;
+                        border-width: paste.has-focus ? 2px : 1px;
+                        border-color: paste.has-focus ? Theme.link : Theme.rule;
+                        if paste.has-focus : Rectangle {
+                            x: 0; width: 3px; height: parent.height; background: Theme.link;
+                        }
+                        HorizontalLayout {
+                            padding-left: 18px; padding-right: 8px; spacing: 12px;
+                            Text {
+                                text: "↗"; vertical-alignment: center; color: Theme.text2; font-size: 16px;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                if root.paste-text == "" : Text {
+                                    width: parent.width; height: parent.height;
+                                    text: "Paste a link to a video, a playlist, a gallery, a file or a magnet";
+                                    vertical-alignment: center;
+                                    color: Theme.text2; font-family: Theme.mono; font-size: 13px;
+                                    overflow: elide;
+                                }
+                                paste := TextInput {
+                                    width: parent.width; height: parent.height;
+                                    text <=> root.paste-text;
+                                    vertical-alignment: center;
+                                    color: Theme.text; font-family: Theme.mono; font-size: 13px;
+                                    single-line: true;
+                                    selection-background-color: Theme.link.with-alpha(0.35);
+                                    edited => { root.paste-edited(self.text); }
+                                    accepted => { root.download(); }
+                                }
+                            }
+                            Pill {
+                                y: (parent.height - self.height) / 2;
+                                height: 40px;
+                                primary: true; mark: "↓"; label: "Download";
+                                enabled: root.can-submit && root.paste-text != "";
+                                clicked => { root.download(); }
+                            }
+                        }
+                    }
+                    Text {
+                        height: 16px;
+                        text: root.detection;
+                        color: root.detection-tone == 2 ? Theme.failed : root.detection-tone == 1 ? Theme.text : Theme.text2;
+                        font-family: Theme.mono; font-size: 11px;
+                        overflow: elide;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px; alignment: start;
+                        Pill { label: root.chip-format; chevron: true; on: true; clicked => { root.cycle-format(); } }
+                        Pill { label: root.chip-engine; chevron: true; on: true; clicked => { root.cycle-engine(); } }
+                        Pill { label: "Polish"; mark: root.chip-polish ? "✓" : ""; on: root.chip-polish; clicked => { root.toggle-polish(); } }
+                        Pill { label: "Playlist"; mark: root.chip-playlist ? "✓" : ""; on: root.chip-playlist; clicked => { root.toggle-playlist(); } }
+                        Rectangle { horizontal-stretch: 1; }
+                        Pill { label: "→ " + root.chip-folder; }
+                    }
+                }
+
+                // Filter tabs and the queue control
+                HorizontalLayout {
+                    padding-left: 24px; padding-right: 24px; padding-top: 16px; padding-bottom: 8px; spacing: 4px;
+                    for tab[i] in root.filters : Rectangle {
+                        height: 28px;
+                        width: tab-row.preferred-width;
+                        border-radius: 14px;
+                        background: root.filter == i ? Theme.raised : transparent;
+                        border-width: root.filter == i ? 1px : 0;
+                        border-color: Theme.rule;
+                        tab-row := HorizontalLayout {
+                            padding-left: 12px; padding-right: 12px; spacing: 6px;
+                            Text {
+                                text: tab.title; vertical-alignment: center;
+                                color: root.filter == i ? Theme.text : Theme.text2; font-size: 12px; font-weight: 600;
+                            }
+                            Text {
+                                text: tab.count; vertical-alignment: center;
+                                color: tab.count == 0 ? Theme.text2.with-alpha(0.5) : Theme.text2;
+                                font-family: Theme.mono; font-size: 11px; font-weight: 700;
+                            }
+                        }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.filter = i; root.select-filter(i); } }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    if root.queue-label != "" : Pill {
+                        label: root.queue-label; on: true;
+                        clicked => { root.queue-action(); }
+                    }
+                }
+                Rectangle { height: 1px; background: Theme.rule; }
+
+                // The list
+                Rectangle {
+                    vertical-stretch: 1;
+                    list := ListView {
+                        for row in root.rows : Rectangle {
+                            height: row.kind == 0 ? 32px : 60px;
+                            if row.kind == 0 : SectionHeader {
+                                width: parent.width;
+                                title: row.header; count: row.count;
+                            }
+                            if row.kind == 1 : ItemRow {
+                                width: parent.width;
+                                data: row;
+                                selected: row.id == root.selected-id;
+                                eased: root.ease-rows;
+                                clicked => { root.selected-id = row.id; root.select(row.id); keys.focus(); }
+                                double-clicked => { root.primary-action(row.id); }
+                            }
+                        }
+                    }
+                    if root.rows.length == 0 : VerticalLayout {
+                        alignment: center; spacing: 16px;
+                        if root.filter == 0 : HorizontalLayout {
+                            alignment: center;
+                            CutD { height: 96px; status: S.pulling; fill: 0; }
+                        }
+                        Text {
+                            text: root.empty-line; horizontal-alignment: center;
+                            color: root.filter == 0 ? Theme.text : Theme.text2;
+                            font-family: root.filter == 0 ? Theme.display : "";
+                            font-size: root.filter == 0 ? 22px : 13px;
+                            font-weight: root.filter == 0 ? 800 : 400;
+                        }
+                    }
+                }
+            }
+
+            // MARK: Inspector
+            if root.inspector-width > 0 : Rectangle {
+                x: parent.width - root.inspector-width; y: 0;
+                width: root.inspector-width; height: parent.height;
+                background: Theme.raised;
+                Rectangle { x: 0; width: 1px; height: parent.height; background: Theme.rule; }
+                if !root.inspector.present : Text {
+                    x: 24px; width: parent.width - 48px;
+                    text: "Select a download to see its files, options and log.";
+                    wrap: word-wrap; vertical-alignment: center; horizontal-alignment: center;
+                    color: Theme.text2;
+                }
+                if root.inspector.present : ScrollView {
+                    VerticalLayout {
+                        padding: 24px; spacing: 14px;
+                        // Status
+                        HorizontalLayout {
+                            spacing: 12px; alignment: start;
+                            CutD { height: 44px; status: root.inspector.status; fill: root.inspector.fill; punch: Theme.raised; eased: true; }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.inspector.word;
+                                    color: root.inspector.status == S.failed ? Theme.failed : root.inspector.status == S.kept ? Theme.kept : Theme.text;
+                                    font-size: 13px; font-weight: 700;
+                                }
+                                Text { text: root.inspector.engine; color: Theme.text2; font-family: Theme.mono; font-size: 10px; }
+                            }
+                        }
+                        Text { text: root.inspector.title; color: Theme.text; font-size: 15px; font-weight: 600; wrap: word-wrap; }
+                        Text { text: root.inspector.source; color: Theme.text2; font-family: Theme.mono; font-size: 10px; wrap: char-wrap; }
+                        // Progress: the big number is the one place Unbounded appears.
+                        if root.inspector.percent != "" : Text {
+                            text: root.inspector.percent;
+                            color: Theme.text; font-family: Theme.display; font-size: 40px; font-weight: 800;
+                        }
+                        if root.inspector.numbers != "" : Text {
+                            text: root.inspector.numbers; color: Theme.text2; font-family: Theme.mono; font-size: 11px; wrap: word-wrap;
+                        }
+                        if root.inspector.failure != "" : VerticalLayout {
+                            spacing: 4px;
+                            Text { text: root.inspector.failure; color: Theme.failed; wrap: word-wrap; font-weight: 600; }
+                            Text { text: root.inspector.hint; color: Theme.text2; wrap: word-wrap; }
+                        }
+                        // Swarm (torrents)
+                        if root.inspector.torrent : InspectorSection {
+                            title: "SWARM";
+                            HorizontalLayout {
+                                spacing: 16px;
+                                Stat { label: "Peers"; value: root.inspector.peers; }
+                                Stat { label: "Seeds"; value: root.inspector.seeds; }
+                                Stat { label: "Ratio"; value: root.inspector.ratio; }
+                            }
+                            HorizontalLayout {
+                                spacing: 16px;
+                                Stat { label: "Down"; value: root.inspector.down; }
+                                Stat { label: "Up"; value: root.inspector.up; }
+                                Stat { label: "Uploaded"; value: root.inspector.uploaded; }
+                            }
+                        }
+                        InspectorSection {
+                            title: "FILES";
+                            for file in root.inspector-files : HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: file.name; color: Theme.text; font-family: Theme.mono; font-size: 11px; overflow: elide; horizontal-stretch: 1; }
+                                Text { text: file.size; color: Theme.text2; font-family: Theme.mono; font-size: 11px; }
+                            }
+                            if root.inspector-files.length == 0 : Text { text: "None yet."; color: Theme.text2; font-size: 11px; }
+                        }
+                        InspectorSection {
+                            title: "OPTIONS";
+                            Text { text: root.inspector.options; color: Theme.text; font-family: Theme.mono; font-size: 11px; wrap: word-wrap; }
+                        }
+                        InspectorSection {
+                            title: "LOG";
+                            Rectangle {
+                                height: 180px;
+                                background: Theme.canvas;
+                                border-radius: Theme.radius-spine;
+                                clip: true;
+                                Text {
+                                    x: 8px; y: parent.height - self.height - 8px;
+                                    width: parent.width - 16px;
+                                    text: root.inspector.log;
+                                    color: Theme.text2; font-family: Theme.mono; font-size: 10px;
+                                    wrap: char-wrap;
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px; alignment: start;
+                            if root.inspector.primary != "" : Pill {
+                                label: root.inspector.primary; on: true;
+                                clicked => { root.primary-action(root.inspector.id); }
+                            }
+                            Pill {
+                                label: "Remove";
+                                clicked => { root.remove(root.inspector.id); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+}

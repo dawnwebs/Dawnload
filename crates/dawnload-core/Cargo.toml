@@ -1,0 +1,33 @@
+[package]
+name = "dawnload-core"
+description = "Dawnload's engine: sources, engines, tools, queue, state and the UI-facing API."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "stream", "http2", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
+url = "2.5"
+percent-encoding = "2.3"
+sha2 = "0.11"
+hex = "0.4"
+unicode-normalization = "0.1"
+directories = "6"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+tar = "0.4"
+lzma-rs = "0.3"
+flate2 = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["test-util"] }
