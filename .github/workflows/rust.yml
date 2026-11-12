@@ -19,7 +19,9 @@ jobs:
       matrix:
         # x86-64 Linux and Windows, ARM Linux and Windows (free for public repos), and Apple
         # Silicon macOS. The ARM builds also run natively in VMs on Apple Silicon Macs.
-        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm, macos-latest]
+        # Linux is pinned to Ubuntu 24.04, the oldest release we support: a binary built against
+        # a newer glibc (ubuntu-latest is 26.04 now) won't start on older systems.
+        os: [ubuntu-24.04, windows-latest, ubuntu-24.04-arm, windows-11-arm, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
