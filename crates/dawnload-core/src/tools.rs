@@ -386,7 +386,9 @@ impl ToolManager {
         let mut manifest = self.manifest();
 
         if let ReleaseKind::PipVenv { package: pip_name } = &plan.kind {
-            let path = self.install_venv(tool, pip_name, &release.version).await?;
+            let path = self.install_venv(&client, tool, pip_name, &release.version, &tmp).await;
+            let _ = std::fs::remove_dir_all(&tmp);
+            let path = path?;
             manifest.tools.insert(
                 tool,
                 ManagedTool {
@@ -452,7 +454,18 @@ impl ToolManager {
         Ok(release.version)
     }
 
-    async fn install_venv(&self, tool: ToolId, package: &str, version: &str) -> Result<PathBuf, ToolError> {
+    /// Puts a Python package in its own virtual environment. The environment is made without pip
+    /// and pip runs from its own wheel, fetched from PyPI and checked against PyPI's digest:
+    /// Debian and Ubuntu leave `ensurepip` out of their Python (it's in `python3-venv`, which a
+    /// stock desktop doesn't have), so `python3 -m venv` with pip fails there.
+    async fn install_venv(
+        &self,
+        client: &reqwest::Client,
+        tool: ToolId,
+        package: &str,
+        version: &str,
+        tmp: &Path,
+    ) -> Result<PathBuf, ToolError> {
         let folders = self.search_folders();
         let python = ["python3", "python"]
             .iter()
@@ -481,9 +494,34 @@ impl ToolManager {
                     .and_then(|o| if o.exit_code == 0 { Ok(o) } else { Err(err(o.output)) })
             }
         };
-        run(python, vec!["-m".into(), "venv".into(), "--clear".into(), venv.display().to_string()]).await?;
-        let pip = if cfg!(windows) { venv.join("Scripts").join("python.exe") } else { venv.join("bin").join("python") };
-        run(pip, vec!["-m".into(), "pip".into(), "install".into(), "--upgrade".into(), format!("{package}=={version}")]).await?;
+        let wheel = pip_wheel(&get_json(client, "https://pypi.org/pypi/pip/json").await?)
+            .ok_or_else(|| err("PyPI listed no pip wheel"))?;
+        let wheel_path = tmp.join(&wheel.filename);
+        let actual = fetch_to_file(client, &wheel.url, &wheel_path, &mut |_, _| {}).await?;
+        if !actual.eq_ignore_ascii_case(&wheel.sha256) {
+            return Err(err(format!(
+                "The download of {} didn't match PyPI's checksum (expected {}, got {actual}). Nothing was installed.",
+                wheel.url, wheel.sha256
+            )));
+        }
+        run(python, vec!["-m".into(), "venv".into(), "--clear".into(), "--without-pip".into(), venv.display().to_string()])
+            .await?;
+        let venv_python = if cfg!(windows) { venv.join("Scripts").join("python.exe") } else { venv.join("bin").join("python") };
+        // pip runs from its wheel (pip's documented bootstrap) and installs into the environment
+        // whose Python runs it.
+        let pip = wheel_path.join("pip").display().to_string();
+        run(
+            venv_python,
+            vec![
+                pip,
+                "install".into(),
+                "--upgrade".into(),
+                "--disable-pip-version-check".into(),
+                "--no-input".into(),
+                format!("{package}=={version}"),
+            ],
+        )
+        .await?;
         let exe = self.venv_executable(tool);
         if version_of(tool, &exe).await.is_none() {
             return Err(err(format!("{} installed but doesn't run.", tool.name())));
@@ -705,6 +743,28 @@ fn release_plan(package: ToolId) -> Option<ReleasePlan> {
             }
         }
     }
+}
+
+#[derive(Debug, PartialEq)]
+struct Wheel {
+    filename: String,
+    url: String,
+    sha256: String,
+}
+
+/// The universal (`py3-none-any`) wheel in a PyPI project's JSON (`/pypi/<name>/json`).
+fn pip_wheel(info: &serde_json::Value) -> Option<Wheel> {
+    info["urls"].as_array()?.iter().find_map(|file| {
+        let filename = file["filename"].as_str()?;
+        if file["packagetype"].as_str() != Some("bdist_wheel") || !filename.ends_with("-py3-none-any.whl") {
+            return None;
+        }
+        Some(Wheel {
+            filename: filename.to_string(),
+            url: file["url"].as_str()?.to_string(),
+            sha256: file["digests"]["sha256"].as_str().filter(|h| h.len() == 64)?.to_string(),
+        })
+    })
 }
 
 async fn get_json(client: &reqwest::Client, url: &str) -> Result<serde_json::Value, ToolError> {
@@ -945,6 +1005,29 @@ mod tests {
         assert!(is_store_alias(Path::new("/c/Users/me/AppData/Local/Microsoft/windowsapps/python3.exe")));
         assert!(!is_store_alias(Path::new(r"C:\Users\me\AppData\Local\Programs\Python\Python313\python.exe")));
         assert!(!is_store_alias(Path::new("/usr/bin/python3")));
+    }
+
+    #[test]
+    fn finds_pips_universal_wheel() {
+        let info = serde_json::json!({ "urls": [
+            { "filename": "pip-26.3.tar.gz", "packagetype": "sdist", "url": "https://files/pip-26.3.tar.gz",
+              "digests": { "sha256": "a".repeat(64) } },
+            { "filename": "pip-26.3-py3-none-any.whl", "packagetype": "bdist_wheel", "url": "https://files/pip-26.3-py3-none-any.whl",
+              "digests": { "sha256": "b".repeat(64) } },
+        ]});
+        assert_eq!(
+            pip_wheel(&info),
+            Some(Wheel {
+                filename: "pip-26.3-py3-none-any.whl".into(),
+                url: "https://files/pip-26.3-py3-none-any.whl".into(),
+                sha256: "b".repeat(64),
+            })
+        );
+        let unhashed = serde_json::json!({ "urls": [
+            { "filename": "pip-26.3-py3-none-any.whl", "packagetype": "bdist_wheel", "url": "https://x", "digests": {} },
+        ]});
+        assert_eq!(pip_wheel(&unhashed), None);
+        assert_eq!(pip_wheel(&serde_json::json!({})), None);
     }
 
     #[test]
