@@ -5,15 +5,22 @@
 #
 #   Scripts/measure-ui.sh            # release build, 30 s per scenario
 #   SECONDS_PER=60 Scripts/measure-ui.sh
+#   BIN=./dawnload-app ./measure-ui.sh   # a prebuilt binary (a CI artifact), no Rust needed
 set -euo pipefail
-cd "$(dirname "$0")/.."
 SECONDS_PER=${SECONDS_PER:-30}
 WARMUP=${WARMUP:-8}
-OUT=${OUT:-target/measure-ui-$(uname -s | tr A-Z a-z).md}
-
-cargo build --release -q -p dawnload-ui
-BIN=target/release/dawnload-app
 OS=$(uname -s)
+
+if [ -n "${BIN:-}" ]; then
+  BIN=$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")
+  [ -x "$BIN" ] || { echo "$BIN is not an executable" >&2; exit 1; }
+  OUT=${OUT:-$(dirname "$BIN")/measure-ui-$(uname -s | tr A-Z a-z).md}
+else
+  cd "$(dirname "$0")/.."
+  cargo build --release -q -p dawnload-ui
+  BIN=$PWD/target/release/dawnload-app
+  OUT=${OUT:-target/measure-ui-$(uname -s | tr A-Z a-z).md}
+fi
 
 cpu_seconds() { # cumulative user+system CPU seconds of $1
   if [ "$OS" = "Linux" ]; then
@@ -60,7 +67,7 @@ scenario() { # name, env...
 {
   echo "# Dawnload UI measurement"
   echo
-  echo "$(uname -srm), $(date -u +%Y-%m-%dT%H:%MZ), ${SECONDS_PER}s per scenario after ${WARMUP}s warm-up, release build."
+  echo "$(uname -srm), $(date -u +%Y-%m-%dT%H:%MZ), ${SECONDS_PER}s per scenario after ${WARMUP}s warm-up, $BIN${XDG_SESSION_TYPE:+, $XDG_SESSION_TYPE session}${SLINT_BACKEND:+, SLINT_BACKEND=$SLINT_BACKEND}."
   echo
   echo "| Scenario | RSS avg (MB) | RSS peak (MB) | Footprint/PSS (MB) | CPU (one core) | Frames/s | Rows patched/s |"
   echo "|---|---|---|---|---|---|---|"
