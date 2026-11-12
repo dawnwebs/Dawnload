@@ -414,9 +414,13 @@ fn save_state(path: &Path, state: &PartState, segments: &[Segment]) {
     state.segments = segments.to_vec();
     if let Ok(bytes) = serde_json::to_vec(&state) {
         let tmp = path.with_extension("dawnload-state-tmp");
-        if std::fs::write(&tmp, bytes).is_ok() {
-            let _ = std::fs::rename(&tmp, path);
+        if std::fs::write(&tmp, &bytes).is_ok() && std::fs::rename(&tmp, path).is_ok() {
+            return;
         }
+        // Windows refuses the rename while something (an indexer, an antivirus scan) has the old
+        // state open. Progress written in place beats none: without a state, Resume starts over.
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::write(path, &bytes);
     }
 }
 
@@ -487,9 +491,18 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
         return Err(JobError::Stopped);
     }
 
-    // Where it goes: the previous run's file if there's one to continue, else a fresh unique name.
-    let previous =
-        request.files.first().map(|f| PathBuf::from(&f.path)).filter(|p| part_path(p).exists() && state_path(p).exists());
+    // Where it goes: the previous run's file if this item left one, else a fresh unique name. The
+    // previous part is continued when its saved progress still matches, and started again in place
+    // when that progress is missing (a crash before the first save), so it's never orphaned beside
+    // a new `name 2.ext`. A state written for another link means the part isn't this item's.
+    let saved_state = |target: &Path| -> Option<PartState> {
+        std::fs::read(state_path(target)).ok().and_then(|b| serde_json::from_slice(&b).ok())
+    };
+    let previous = request
+        .files
+        .first()
+        .map(|f| PathBuf::from(&f.path))
+        .filter(|p| part_path(p).exists() && saved_state(p).is_none_or(|saved: PartState| saved.url == req.url));
     let target = match previous {
         Some(p) => p,
         None => {
@@ -527,7 +540,10 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
         last_modified: probe.last_modified.clone(),
         segments: vec![],
     };
-    let mut state: Option<PartState> = std::fs::read(&state_file).ok().and_then(|b| serde_json::from_slice(&b).ok());
+    let mut state = saved_state(&target);
+    if state.is_none() && part.exists() {
+        ctx.log(format!("No saved progress for {display_name}; starting it again."));
+    }
     if let Some(saved) = &state {
         let same = saved.total == probe.total
             && probe.ranges
@@ -889,6 +905,45 @@ mod tests {
         assert_eq!(outcome.files, vec![target.clone()]);
         assert_eq!(std::fs::read(&target).unwrap(), data);
         assert!(events.iter().any(|e| matches!(e, JobEvent::Log(l) if l.starts_with("Continuing"))));
+    }
+
+    #[tokio::test]
+    async fn a_part_without_its_state_starts_again_in_place() {
+        // A crash can leave the item's part file without its state (seen once on Windows): Resume
+        // used to start `test file 2.bin` and leave the part behind.
+        let data = body(3 * MIN_SPLIT as usize);
+        let server = test_server::serve(data.clone(), true, 0).await;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("test file.bin");
+        std::fs::write(part_path(&target), vec![0xEE; 1000]).unwrap();
+        let files = vec![ItemFile { path: target.display().to_string(), size: None, bytes_done: Some(1000), selected: true }];
+        let (result, events) = run_job(request(&server.url, dir.path(), files), StopSignal::new()).await;
+        assert_eq!(result.unwrap().files, vec![target.clone()]);
+        assert_eq!(std::fs::read(&target).unwrap(), data);
+        assert!(events.iter().any(|e| matches!(e, JobEvent::Log(l) if l.starts_with("No saved progress"))));
+        let left: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(left, vec![std::ffi::OsString::from("test file.bin")]);
+    }
+
+    #[tokio::test]
+    async fn a_part_saved_for_another_link_is_left_alone() {
+        let data = body(MIN_SPLIT as usize);
+        let server = test_server::serve(data.clone(), true, 0).await;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("test file.bin");
+        std::fs::write(part_path(&target), b"someone else's").unwrap();
+        let other = PartState {
+            url: "https://elsewhere.test/test%20file.bin".into(),
+            total: Some(15),
+            etag: None,
+            last_modified: None,
+            segments: vec![],
+        };
+        save_state(&state_path(&target), &other, &[]);
+        let files = vec![ItemFile { path: target.display().to_string(), size: None, bytes_done: None, selected: true }];
+        let (result, _) = run_job(request(&server.url, dir.path(), files), StopSignal::new()).await;
+        assert_eq!(result.unwrap().files, vec![dir.path().join("test file 2.bin")]);
+        assert_eq!(std::fs::read(part_path(&target)).unwrap(), b"someone else's");
     }
 
     #[tokio::test]
