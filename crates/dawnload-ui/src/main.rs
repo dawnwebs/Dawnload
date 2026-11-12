@@ -166,6 +166,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         runtime.spawn(demo_driver(core.clone(), demo_items));
     }
 
+    app.global::<Theme>().set_no_preference_is_light(cfg!(target_os = "linux"));
     // Review switches: DAWNLOAD_UI_THEME=light|dark, DAWNLOAD_UI_SELECT_FIRST=1.
     match std::env::var("DAWNLOAD_UI_THEME").as_deref() {
         Ok("light") => app.global::<Theme>().set_mode(2),

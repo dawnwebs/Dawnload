@@ -11,7 +11,13 @@ import "fonts/Unbounded-ExtraBold.ttf";
 export global Theme {
     // 0 follows the system, 1 dark, 2 light.
     in-out property <int> mode: 0;
-    out property <bool> dark: mode == 0 ? Palette.color-scheme != ColorScheme.light : mode == 1;
+    // When the system states no preference: dark, Dawnload's default (DESIGN.md), except where
+    // "no preference" is how the desktop says light. GNOME's Light appearance is
+    // `color-scheme 'default'`, which the portal reports as no preference; main.rs sets this on Linux.
+    in property <bool> no-preference-is-light: false;
+    out property <bool> dark: mode == 0
+        ? (Palette.color-scheme == ColorScheme.dark || (Palette.color-scheme != ColorScheme.light && !no-preference-is-light))
+        : mode == 1;
 
     out property <color> canvas: dark ? #07140E : #F2F8F3;
     out property <color> raised: dark ? #0F2219 : #FFFFFF;
