@@ -158,6 +158,8 @@ export component Pill inherits Rectangle {
     // The arrow in the Download pill moves down 3 px when pressed (DESIGN.md › The pull).
     in property <bool> pull;
     in property <length> label-size: 12px;
+    // The pointer is over it (a row's hover action stays shown while the pointer is on it).
+    out property <bool> hovered: touch.has-hover;
     callback clicked;
     height: 28px;
     min-width: row.min-width;

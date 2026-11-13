@@ -154,9 +154,12 @@ component ItemRow inherits Rectangle {
                         accessible-role: none;
                     }
                 }
-                // Hover actions: shortcuts for the context menu, never the only way.
-                if touch.has-hover && (root.data.status == S.kept || root.data.status == S.failed || root.data.status == S.paused) : Pill {
+                // Hover actions: shortcuts for the context menu, never the only way. Shown while the
+                // pointer is on the row or on the pill itself (the row loses its hover to the pill).
+                if root.data.status == S.kept || root.data.status == S.failed || root.data.status == S.paused : action := Pill {
                     y: (parent.height - self.height) / 2;
+                    visible: touch.has-hover || self.hovered;
+                    width: self.visible ? self.preferred-width : 0px;
                     label: root.data.status == S.kept ? Theme.reveal : root.data.status == S.failed ? "Retry" : "Resume";
                     clicked => { root.act(root.data.status == S.kept ? "reveal" : "resume"); }
                 }
