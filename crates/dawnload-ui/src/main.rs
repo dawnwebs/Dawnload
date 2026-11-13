@@ -45,6 +45,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let links = instance::links_from_args(args.iter().filter(|a| *a != "--real" && *a != "--demo").cloned());
     let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
     let _enter = runtime.enter();
+    if let Some(note) = dawnload_core::paths::migrate_legacy_data_dir() {
+        eprintln!("dawnload-app: {note}");
+    }
     let data_dir = dawnload_core::paths::data_dir();
 
     // One app per data folder: hand what we were given to the running one.

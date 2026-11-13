@@ -633,7 +633,7 @@ impl Bridge {
                 let mut last = Instant::now() - Duration::from_secs(1);
                 let tx = own.clone();
                 let mut progress = move |t: ToolId, done: u64, total: Option<u64>| {
-                    if last.elapsed() >= Duration::from_millis(200) {
+                    if last.elapsed() >= Duration::from_millis(200) || total.is_some_and(|t| done >= t) {
                         last = Instant::now();
                         let _ = tx.send(UiMessage::ToolJob(
                             if t == ToolId::Ffprobe { ToolId::Ffmpeg } else { t },
@@ -668,7 +668,7 @@ impl Bridge {
             let tx = own.clone();
             let mut last = Instant::now() - Duration::from_secs(1);
             let mut progress = move |t: ToolId, done: u64, total: Option<u64>| {
-                if last.elapsed() >= Duration::from_millis(200) {
+                if last.elapsed() >= Duration::from_millis(200) || total.is_some_and(|t| done >= t) {
                     last = Instant::now();
                     let _ = tx.send(UiMessage::ToolJob(
                         if t == ToolId::Ffprobe { ToolId::Ffmpeg } else { t },

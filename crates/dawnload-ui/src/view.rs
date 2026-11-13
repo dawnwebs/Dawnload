@@ -344,6 +344,7 @@ pub fn tool_rows(statuses: &[ToolStatus], jobs: &std::collections::BTreeMap<Tool
                 Job::Installing { done, total } => {
                     let fill = total.filter(|t| *t > 0).map(|t| *done as f32 / t as f32);
                     let words = match total {
+                        Some(t) if done >= t => "Checking it against the publisher's checksum…".to_string(),
                         Some(t) => format!("Installing · {}", format::bytes_of(*done, *t)),
                         None if *done > 0 => format!("Installing · {}", format::bytes(*done)),
                         None => "Installing…".into(),

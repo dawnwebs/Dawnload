@@ -112,9 +112,17 @@ component ItemRow inherits Rectangle {
                 x: 0; width: 3px; height: parent.height;
                 background: Theme.link;
             }
+            // The row's TouchArea takes every button, so it opens the context menu itself: Slint's
+            // ContextMenuArea only sees a right-click its children didn't take.
             touch := TouchArea {
                 clicked => { root.clicked(); }
                 double-clicked => { root.double-clicked(); }
+                pointer-event(event) => {
+                    if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                        root.clicked();
+                        menu.show({ x: self.mouse-x, y: self.mouse-y });
+                    }
+                }
             }
             HorizontalLayout {
                 padding-left: 24px; padding-right: 16px; spacing: 12px;
@@ -450,8 +458,13 @@ export component AppWindow inherits Window {
                                 stroke-width: 1.5px; stroke-line-cap: round; stroke-line-join: round;
                             }
                         }
+                        // The field scrolls a long link inside itself; its text must never widen the row and
+                        // push the Download pill out.
                         Rectangle {
                             horizontal-stretch: 1;
+                            min-width: 0px;
+                            preferred-width: 0px;
+                            clip: true;
                             if root.paste-text == "" : Text {
                                 width: parent.width; height: parent.height;
                                 text: "Paste a link to a video, a playlist, a gallery, a file or a magnet";
