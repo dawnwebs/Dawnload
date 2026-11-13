@@ -1,6 +1,6 @@
 [package]
 name = "dawnload-ui"
-description = "Dawnload's desktop app (Phase 2 prototype): Slint UI over dawnload-core."
+description = "Dawnload's desktop app: a Slint UI over dawnload-core."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,7 +14,31 @@ path = "src/main.rs"
 [dependencies]
 dawnload-core.workspace = true
 tokio.workspace = true
-slint = "1.18"
+serde.workspace = true
+serde_json.workspace = true
+# unstable-winit-030: the winit window, for dropped files, the title bar's theme and the window
+# icon on Wayland-less X11. Pinned to winit 0.30's API on purpose (ADR 0010).
+slint = { version = "1.18", features = ["unstable-winit-030"] }
+# Native file and folder pickers (Windows' common dialogs, the XDG portal on Linux, NSOpenPanel).
+rfd = { version = "0.18", default-features = false, features = ["xdg-portal"] }
+
+[target.'cfg(windows)'.dependencies]
+# Toast notifications, the app's identity (AUMID), opening files, the system's animation setting.
+windows = { version = "0.62", features = [
+    "Data_Xml_Dom",
+    "UI_Notifications",
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(all(unix, not(target_vendor = "apple")))'.dependencies]
+# Desktop notifications and "show in folder" over D-Bus. Slint's tray already brings zbus.
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 
 [build-dependencies]
 slint-build = "1.18"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

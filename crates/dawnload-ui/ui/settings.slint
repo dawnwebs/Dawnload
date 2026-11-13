@@ -1,0 +1,525 @@
+// Settings (General, Access, Tools, Torrents, About), the first-run card and the About card.
+// Settings is a page inside the main window rather than a second window: one window keeps the
+// app light and the theme in one place (ADR 0010).
+
+import { ScrollView, AboutSlint, Palette } from "std-widgets.slint";
+import { Theme, S } from "theme.slint";
+import { CutD, Pill, Toggle, Segmented, SettingRow, SectionTitle, IconButton } from "parts.slint";
+
+export struct Prefs {
+    folder: string,
+    format: int,
+    engine: int,
+    polish: bool,
+    playlist: bool,
+    // Index into the option lists below.
+    connections: int,
+    lane: int,
+    retries: int,
+    appearance: int,
+    motion: int,
+    close-to-tray: bool,
+    notify-kept: bool,
+    notify-failed: bool,
+    auto-update: bool,
+    impersonate: int,
+    cookies-path: string,
+    cookies-on: bool,
+    tray-available: bool,
+}
+
+export struct ToolRow {
+    id: string,
+    name: string,
+    purpose: string,
+    // S.kept found, S.failed missing, S.pulling installing.
+    status: int,
+    loading: bool,
+    fill: float,
+    version: string,
+    path: string,
+    message: string,
+    failed: bool,
+    // "Install", "Update", "Reinstall" or "".
+    action: string,
+    busy: bool,
+    custom: bool,
+}
+
+export global Choices {
+    out property <[string]> formats: ["Best", "Compatible", "Audio only"];
+    out property <[string]> engines: ["Auto", "yt-dlp", "gallery-dl", "Direct"];
+    out property <[string]> connections: ["1", "2", "4", "8", "16"];
+    out property <[string]> lanes: ["1", "2", "3", "4"];
+    out property <[string]> retries: ["Off", "2", "5"];
+    out property <[string]> appearances: ["System", "Dark", "Light"];
+    out property <[string]> motions: ["System", "Reduce", "Full"];
+    out property <[string]> impersonations: ["Off", "Chrome 146", "Chrome 145", "Chrome 142", "Safari 18.4"];
+}
+
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked;
+    height: 32px;
+    border-radius: Theme.radius-spine;
+    background: selected ? Theme.raised : touch.has-hover ? Theme.raised.with-alpha(0.5) : transparent;
+    accessible-role: tab;
+    accessible-label: root.label;
+    accessible-item-selected: root.selected;
+    accessible-action-default => { root.clicked(); }
+    if root.selected : Rectangle { x: 0; width: 3px; height: parent.height; background: Theme.link; }
+    Text {
+        x: 14px; text: root.label; vertical-alignment: center; height: parent.height;
+        color: root.selected ? Theme.text : Theme.text2; font-weight: root.selected ? 600 : 500;
+        accessible-role: none;
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    fs := FocusScope {
+        focus-on-click: false;
+        key-pressed(event) => {
+            if event.text == " " || event.text == Key.Return { root.clicked(); return accept; }
+            reject
+        }
+    }
+    if fs.has-focus : Rectangle {
+        border-radius: Theme.radius-spine; border-width: 2px; border-color: Theme.link;
+    }
+}
+
+component Group inherits VerticalLayout {
+    in property <string> title;
+    spacing: 14px;
+    padding-bottom: 12px;
+    SectionTitle { text: root.title; }
+    @children
+}
+
+component Mono inherits Text {
+    color: Theme.text2; font-family: Theme.mono; font-size: 11px; wrap: char-wrap;
+}
+
+component ToolCard inherits Rectangle {
+    in property <ToolRow> tool;
+    callback action(string, string);
+    background: Theme.raised;
+    border-radius: Theme.radius-spine;
+    border-width: 1px;
+    border-color: Theme.rule;
+    accessible-role: groupbox;
+    accessible-label: root.tool.name;
+    accessible-description: root.tool.status == S.kept ? root.tool.version : root.tool.message;
+    VerticalLayout {
+        padding: 14px; spacing: 8px;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                alignment: start;
+                CutD { height: 22px; status: root.tool.status; loading: root.tool.loading; fill: root.tool.fill; punch: Theme.raised; }
+            }
+            VerticalLayout {
+                spacing: 3px; horizontal-stretch: 1;
+                HorizontalLayout {
+                    spacing: 8px; alignment: start;
+                    Text { text: root.tool.name; color: Theme.text; font-weight: 700; font-family: Theme.mono; font-size: 13px; }
+                    Text { text: root.tool.purpose; color: Theme.text2; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                }
+                if root.tool.version != "" : Text { text: root.tool.version; color: Theme.text; font-family: Theme.mono; font-size: 11px; wrap: word-wrap; }
+                if root.tool.path != "" : Mono { text: root.tool.path; }
+                if root.tool.message != "" : Text {
+                    text: root.tool.message; wrap: word-wrap; font-size: 12px;
+                    color: root.tool.failed ? Theme.failed : Theme.text2;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px; alignment: end;
+            if root.tool.action != "" : Pill {
+                label: root.tool.action; on: true; enabled: !root.tool.busy;
+                clicked => { root.action(root.tool.id, "install"); }
+            }
+            Pill {
+                label: "Choose…"; enabled: !root.tool.busy;
+                hint: "Use a " + root.tool.name + " you installed yourself";
+                clicked => { root.action(root.tool.id, "choose"); }
+            }
+            if root.tool.custom : Pill {
+                label: "Use Default";
+                clicked => { root.action(root.tool.id, "reset"); }
+            }
+            if root.tool.path != "" : Pill {
+                label: Theme.reveal;
+                clicked => { root.action(root.tool.id, "reveal"); }
+            }
+        }
+    }
+}
+
+// Dawnload's version and licences, with Slint's attribution (AboutSlint), which the Slint
+// Royalty-free License requires (ADR 0009).
+export component AboutCard inherits VerticalLayout {
+    in property <string> version;
+    callback command(string);
+    spacing: 16px;
+    alignment: start;
+    accessible-role: groupbox;
+    accessible-label: "About Dawnload";
+    HorizontalLayout {
+        spacing: 12px; alignment: start;
+        Image { source: @image-url("../../../docs/brand/logo/dawnload-mark.svg"); height: 36px; width: 30px; accessible-label: "Dawnload"; }
+        VerticalLayout {
+            alignment: center; spacing: 2px;
+            Image {
+                source: Theme.dark ? @image-url("../../../docs/brand/logo/dawnload-wordmark-paper.svg") : @image-url("../../../docs/brand/logo/dawnload-wordmark-ink.svg");
+                height: 18px; width: 118px; image-fit: contain; accessible-role: none;
+            }
+            Text { text: "Version " + root.version; color: Theme.text2; font-family: Theme.mono; font-size: 11px; }
+        }
+    }
+    Text {
+        text: "Paste a link and Dawnload keeps the file: video, audio, galleries and plain files, in one queue.";
+        color: Theme.text; wrap: word-wrap;
+    }
+    Text {
+        text: "Dawnload is free software under the MIT License. It runs yt-dlp (Unlicense), gallery-dl (GPL-2.0), ffmpeg (GPL builds) and deno (MIT) as separate programs that it downloads from their publishers; it doesn't include them. Its fonts, Unbounded and Martian Mono, are under the SIL Open Font License.";
+        color: Theme.text2; font-size: 12px; wrap: word-wrap;
+    }
+    HorizontalLayout {
+        spacing: 8px; alignment: start;
+        Pill { label: "Source Code"; hint: "github.com/dawnwebs/Dawnload"; clicked => { root.command("open-repo"); } }
+        Pill { label: "Licences"; hint: "Dawnload's licence and the licences of what it's built with"; clicked => { root.command("open-licences"); } }
+    }
+    Text { text: "Built with Slint"; color: Theme.text2; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; }
+    // AboutSlint draws in the system palette; a card in that palette keeps it legible in every
+    // appearance.
+    HorizontalLayout {
+        alignment: start;
+        Rectangle {
+            width: 300px; height: 130px;
+            background: Palette.background;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.rule;
+            AboutSlint { }
+        }
+    }
+}
+
+export component SettingsPage inherits Rectangle {
+    in-out property <int> tab: 0;
+    in property <Prefs> prefs;
+    in property <[ToolRow]> tools;
+    in property <string> js-line;
+    in property <bool> js-ok: true;
+    in property <bool> tools-busy;
+    in property <string> tools-note;
+    in property <string> version;
+    callback set-option(string, int);
+    callback command(string);
+    callback tool-action(string, string);
+    callback close();
+    background: Theme.canvas;
+    accessible-role: tab-panel;
+    accessible-label: "Settings";
+
+    // Swallow clicks so nothing behind the page reacts.
+    TouchArea {}
+
+    HorizontalLayout {
+        // Sidebar
+        Rectangle {
+            width: 200px;
+            background: Theme.raised;
+            Rectangle { x: parent.width - 1px; width: 1px; background: Theme.rule; }
+            VerticalLayout {
+                padding: 16px; padding-top: 20px; spacing: 4px;
+                alignment: start;
+                accessible-role: tab-list;
+                accessible-label: "Settings sections";
+                HorizontalLayout {
+                    padding-bottom: 12px; padding-left: 8px; spacing: 10px;
+                    IconButton {
+                        label: "Back to downloads";
+                        icon: "back";
+                        clicked => { root.close(); }
+                    }
+                    Text { text: "Settings"; color: Theme.text; font-size: 15px; font-weight: 700; vertical-alignment: center; }
+                }
+                NavItem { label: "General"; selected: root.tab == 0; clicked => { root.tab = 0; } }
+                NavItem { label: "Access"; selected: root.tab == 1; clicked => { root.tab = 1; } }
+                NavItem { label: "Tools"; selected: root.tab == 2; clicked => { root.tab = 2; } }
+                NavItem { label: "Torrents"; selected: root.tab == 3; clicked => { root.tab = 3; } }
+                NavItem { label: "About"; selected: root.tab == 4; clicked => { root.tab = 4; } }
+            }
+        }
+        ScrollView {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                padding: 32px; padding-right: 40px; spacing: 20px;
+                alignment: start;
+
+                // MARK: General
+                if root.tab == 0 : VerticalLayout {
+                    spacing: 20px;
+                    Group {
+                        title: "DOWNLOADS";
+                        SettingRow {
+                            title: "Folder";
+                            note: root.prefs.folder;
+                            Pill { label: "Change…"; y: (parent.height - self.height) / 2; clicked => { root.command("choose-folder"); } }
+                            Pill { label: Theme.reveal; y: (parent.height - self.height) / 2; clicked => { root.command("show-folder"); } }
+                        }
+                        SettingRow {
+                            title: "Downloads at once";
+                            note: "Videos and pages download one after another by default. Plain files each use several connections.";
+                            Segmented { label: "Downloads at once"; options: Choices.lanes; selected: root.prefs.lane; chosen(i) => { root.set-option("lane", i); } }
+                        }
+                        SettingRow {
+                            title: "Connections per file";
+                            note: "For plain files Dawnload downloads itself.";
+                            Segmented { label: "Connections per file"; options: Choices.connections; selected: root.prefs.connections; chosen(i) => { root.set-option("connections", i); } }
+                        }
+                        SettingRow {
+                            title: "Retries";
+                            note: "When a connection drops, try again before calling it Failed.";
+                            Segmented { label: "Retries"; options: Choices.retries; selected: root.prefs.retries; chosen(i) => { root.set-option("retries", i); } }
+                        }
+                    }
+                    Group {
+                        title: "NEW DOWNLOADS";
+                        Text { text: "The same choices as the chips under the paste field. Each download keeps its own copy."; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                        SettingRow {
+                            title: "Format";
+                            Segmented { label: "Format"; options: Choices.formats; selected: root.prefs.format; chosen(i) => { root.set-option("format", i); } }
+                        }
+                        SettingRow {
+                            title: "Engine";
+                            note: "Auto picks gallery-dl for galleries, Dawnload's own engine for plain files and yt-dlp for the rest.";
+                            Segmented { label: "Engine"; options: Choices.engines; selected: root.prefs.engine; chosen(i) => { root.set-option("engine", i); } }
+                        }
+                        Toggle {
+                            label: "Polish";
+                            note: "ffmpeg merges audio and video, remuxes to MP4 and moves the index to the front.";
+                            checked: root.prefs.polish;
+                            toggled(on) => { root.set-option("polish", on ? 1 : 0); }
+                        }
+                        Toggle {
+                            label: "Whole playlist";
+                            note: "When a link belongs to a playlist, download all of it.";
+                            checked: root.prefs.playlist;
+                            toggled(on) => { root.set-option("playlist", on ? 1 : 0); }
+                        }
+                    }
+                    Group {
+                        title: "WINDOW";
+                        SettingRow {
+                            title: "Appearance";
+                            Segmented { label: "Appearance"; options: Choices.appearances; selected: root.prefs.appearance; chosen(i) => { root.set-option("appearance", i); } }
+                        }
+                        SettingRow {
+                            title: "Motion";
+                            note: "Reduce stops the loader and movement; System follows your computer's setting.";
+                            Segmented { label: "Motion"; options: Choices.motions; selected: root.prefs.motion; chosen(i) => { root.set-option("motion", i); } }
+                        }
+                        Toggle {
+                            label: "Keep running in the tray";
+                            note: root.prefs.tray-available ? "Closing the window leaves Dawnload downloading in the tray. Quit from the tray's menu." : "This desktop has no tray, so closing the window quits Dawnload.";
+                            enabled: root.prefs.tray-available;
+                            checked: root.prefs.close-to-tray && root.prefs.tray-available;
+                            toggled(on) => { root.set-option("close-to-tray", on ? 1 : 0); }
+                        }
+                        Toggle {
+                            label: "Notify when a download is kept";
+                            checked: root.prefs.notify-kept;
+                            toggled(on) => { root.set-option("notify-kept", on ? 1 : 0); }
+                        }
+                        Toggle {
+                            label: "Notify when a download fails";
+                            checked: root.prefs.notify-failed;
+                            toggled(on) => { root.set-option("notify-failed", on ? 1 : 0); }
+                        }
+                    }
+                }
+
+                // MARK: Access
+                if root.tab == 1 : VerticalLayout {
+                    spacing: 20px;
+                    Group {
+                        title: "BROWSER IMPERSONATION";
+                        Text {
+                            text: "Some sites refuse anything that doesn't look like a browser. yt-dlp can present itself as one.";
+                            color: Theme.text2; font-size: 12px; wrap: word-wrap;
+                        }
+                        SettingRow {
+                            title: "Impersonate";
+                            Segmented { label: "Impersonate"; options: Choices.impersonations; selected: root.prefs.impersonate; chosen(i) => { root.set-option("impersonate", i); } }
+                        }
+                    }
+                    Group {
+                        title: "COOKIES";
+                        Text {
+                            text: "Export cookies in Netscape format from a browser session you own. Dawnload passes the file to yt-dlp and gallery-dl on " + Theme.computer + " and nowhere else.";
+                            color: Theme.text2; font-size: 12px; wrap: word-wrap;
+                        }
+                        SettingRow {
+                            title: "cookies.txt";
+                            note: root.prefs.cookies-path == "" ? "None chosen." : root.prefs.cookies-path;
+                            Pill { label: root.prefs.cookies-path == "" ? "Choose…" : "Replace…"; y: (parent.height - self.height) / 2; clicked => { root.command("choose-cookies"); } }
+                            if root.prefs.cookies-path != "" : Pill { label: "Remove"; y: (parent.height - self.height) / 2; clicked => { root.command("remove-cookies"); } }
+                        }
+                        if root.prefs.cookies-path != "" : Toggle {
+                            label: "Use it for new downloads";
+                            note: "The same as the cookies.txt chip under the paste field.";
+                            checked: root.prefs.cookies-on;
+                            toggled(on) => { root.set-option("cookies", on ? 1 : 0); }
+                        }
+                    }
+                    Group {
+                        title: "WHEN A SITE SAYS HTTP 403";
+                        Text {
+                            text: "1. Check Settings › Tools: an old yt-dlp is the usual cause, and Update fixes it.\n2. Turn on browser impersonation, then Retry.\n3. Add your cookies.txt, then Retry.\n4. Still refused? The site may block downloads; the item's log says what it answered.";
+                            color: Theme.text; font-size: 12px; wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // MARK: Tools
+                if root.tab == 2 : VerticalLayout {
+                    spacing: 16px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Dawnload runs these tools on " + Theme.computer + ". It installs official builds, checks them before they run, and keeps its own copies current.";
+                            color: Theme.text2; font-size: 12px; wrap: word-wrap; horizontal-stretch: 1;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px; alignment: start;
+                        Pill { label: "Check Again"; hint: Theme.mod-key + "+R"; enabled: !root.tools-busy; clicked => { root.command("check-tools"); } }
+                        Pill { label: "Check for Updates"; enabled: !root.tools-busy; clicked => { root.command("check-updates"); } }
+                        Pill { label: "Update All"; enabled: !root.tools-busy; hint: "Updates the copies Dawnload installed"; clicked => { root.command("update-tools"); } }
+                    }
+                    if root.tools-note != "" : Text { text: root.tools-note; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                    for tool in root.tools : ToolCard {
+                        tool: tool;
+                        action(id, what) => { root.tool-action(id, what); }
+                    }
+                    Rectangle {
+                        background: Theme.raised; border-radius: Theme.radius-spine; border-width: 1px; border-color: Theme.rule;
+                        VerticalLayout {
+                            padding: 14px; spacing: 4px;
+                            SectionTitle { text: "JAVASCRIPT RUNTIME FOR YOUTUBE"; }
+                            Text { text: root.js-line; color: root.js-ok ? Theme.text : Theme.failed; font-size: 12px; wrap: word-wrap; }
+                        }
+                    }
+                    Toggle {
+                        label: "Update Dawnload's tools once a day";
+                        note: "Only the copies Dawnload installed. Tools from your package manager stay with it.";
+                        checked: root.prefs.auto-update;
+                        toggled(on) => { root.set-option("auto-update", on ? 1 : 0); }
+                    }
+                }
+
+                // MARK: Torrents
+                if root.tab == 3 : VerticalLayout {
+                    spacing: 14px;
+                    Group {
+                        title: "TORRENTS";
+                        Text {
+                            text: "Torrent downloads aren't built yet. Dawnload already recognises magnet links and .torrent files and keeps them in the list; a later version downloads and seeds them.";
+                            color: Theme.text; font-size: 12px; wrap: word-wrap;
+                        }
+                        Text {
+                            text: "Coming here: seed until a ratio, seed for at most a time, ask which files before downloading, the listening port.";
+                            color: Theme.text2; font-size: 12px; wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // MARK: About
+                if root.tab == 4 : AboutCard {
+                    version: root.version;
+                    command(name) => { root.command(name); }
+                }
+            }
+        }
+    }
+}
+
+// The first-run card (DESIGN.md › First run).
+export component FirstRunCard inherits Rectangle {
+    in property <[ToolRow]> tools;
+    in property <string> folder;
+    in property <bool> tools-busy;
+    in property <bool> missing;
+    callback command(string);
+    background: Theme.scrim;
+    accessible-role: groupbox;
+    accessible-label: "Welcome to Dawnload";
+    TouchArea {}
+    Rectangle {
+        width: min(520px, parent.width - 48px);
+        height: card.preferred-height;
+        background: Theme.raised;
+        border-radius: Theme.radius-card;
+        border-width: 1px;
+        border-color: Theme.rule;
+        card := VerticalLayout {
+            padding: 32px; spacing: 18px;
+            HorizontalLayout {
+                spacing: 10px; alignment: start;
+                Image { source: @image-url("../../../docs/brand/logo/dawnload-mark.svg"); height: 24px; width: 20px; accessible-role: none; }
+                Image {
+                    source: Theme.dark ? @image-url("../../../docs/brand/logo/dawnload-wordmark-paper.svg") : @image-url("../../../docs/brand/logo/dawnload-wordmark-ink.svg");
+                    height: 18px; width: 118px; image-fit: contain; y: 3px; accessible-label: "Dawnload";
+                }
+            }
+            Text {
+                text: "Keep what you find.";
+                color: Theme.text; font-family: Theme.display; font-size: 28px; font-weight: 800;
+                wrap: word-wrap;
+            }
+            // Tools
+            VerticalLayout {
+                spacing: 6px;
+                SectionTitle { text: "TOOLS ON " + (Theme.computer == "this Mac" ? "THIS MAC" : "THIS COMPUTER"); }
+                for tool in root.tools : HorizontalLayout {
+                    spacing: 10px;
+                    CutD { height: 16px; status: tool.status; loading: tool.loading; fill: tool.fill; punch: Theme.raised; }
+                    Text { text: tool.name; color: Theme.text; font-family: Theme.mono; font-size: 12px; vertical-alignment: center; width: 90px; }
+                    Text {
+                        text: tool.status == S.kept ? tool.version : tool.message;
+                        color: tool.failed ? Theme.failed : Theme.text2; font-size: 12px; vertical-alignment: center;
+                        overflow: elide; horizontal-stretch: 1;
+                    }
+                }
+                if root.missing : HorizontalLayout {
+                    alignment: start; padding-top: 4px;
+                    Pill {
+                        label: root.tools-busy ? "Installing…" : "Install Missing Tools"; on: true; enabled: !root.tools-busy;
+                        hint: "Official builds, checked before they run";
+                        clicked => { root.command("install-missing"); }
+                    }
+                }
+            }
+            // Folder
+            VerticalLayout {
+                spacing: 6px;
+                SectionTitle { text: "FILES GO TO"; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: root.folder; color: Theme.text; font-family: Theme.mono; font-size: 11px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                    Pill { label: "Change…"; clicked => { root.command("choose-folder"); } }
+                }
+            }
+            Text {
+                text: "Dawnload is for media you have the right to keep. It runs yt-dlp, gallery-dl and ffmpeg on " + Theme.computer + "; nothing goes through a server.";
+                color: Theme.text2; font-size: 12px; wrap: word-wrap;
+            }
+            HorizontalLayout {
+                alignment: end;
+                Pill { label: "Start"; primary: true; height: 36px; label-size: 13px; clicked => { root.command("first-run-done"); } }
+            }
+        }
+    }
+}
