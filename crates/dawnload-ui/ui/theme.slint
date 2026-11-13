@@ -1,0 +1,60 @@
+// Brand tokens (docs/brand/web/dawnload-tokens.json, docs/DESIGN.md › Colour) and the few words
+// that differ per OS.
+
+import { Palette } from "std-widgets.slint";
+import "fonts/MartianMono-Medium.ttf";
+import "fonts/MartianMono-Bold.ttf";
+import "fonts/Unbounded-ExtraBold.ttf";
+
+export global Theme {
+    // 0 follows the system, 1 dark, 2 light (Settings › General › Appearance).
+    in-out property <int> mode: 0;
+    // When the system states no preference: dark, Dawnload's default (DESIGN.md), except where
+    // "no preference" is how the desktop says light. GNOME's Light appearance is
+    // `color-scheme 'default'`, which the portal reports as no preference; main.rs sets this on Linux.
+    in property <bool> no-preference-is-light: false;
+    out property <bool> dark: mode == 0
+        ? (Palette.color-scheme == ColorScheme.dark || (Palette.color-scheme != ColorScheme.light && !no-preference-is-light))
+        : mode == 1;
+    // Reduce Motion: no translation, no loader, no settle; cross-fades stay (DESIGN.md › Motion).
+    in property <bool> reduce-motion: false;
+
+    out property <color> canvas: dark ? #07140E : #F2F8F3;
+    out property <color> raised: dark ? #0F2219 : #FFFFFF;
+    out property <color> rule: dark ? #1B3428 : #DCE9DF;
+    out property <color> track: dark ? #1B3428 : #DCE9DF;
+    out property <color> text: dark ? #F2F8F3 : #07140E;
+    out property <color> text2: dark ? #9DC4AE : #4C6B5A;
+    out property <color> action: #17D36E;
+    out property <color> on-action: #07140E;
+    out property <color> link: dark ? #17D36E : #0B7A3E;
+    out property <color> progress: #17D36E;
+    out property <color> kept: dark ? #17D36E : #0B7A3E;
+    out property <color> failed: dark ? #FF6B5C : #B8261A;
+    out property <color> scrim: dark ? #000000a0 : #07140E60;
+
+    out property <string> mono: "Martian Mono";
+    out property <string> display: "Unbounded";
+
+    out property <length> radius-spine: 6px;
+    out property <length> radius-card: 20px;
+
+    // Menus are drawn in the system's palette, so their check follows it.
+    out property <image> check: Palette.color-scheme == ColorScheme.dark ? @image-url("../assets/check-dark.svg") : @image-url("../assets/check-light.svg");
+
+    // Per-OS words, set by main.rs: "Ctrl" or "⌘"; "Show in Folder" or "Show in Finder".
+    in property <string> mod-key: "Ctrl";
+    in property <string> reveal: "Show in Folder";
+    in property <string> computer: "this computer";
+}
+
+// Status codes shared with Rust (src/rows.rs › status_code).
+export global S {
+    out property <int> queued: 0;
+    out property <int> pulling: 1;
+    out property <int> polishing: 2;
+    out property <int> kept: 3;
+    out property <int> failed: 4;
+    out property <int> paused: 5;
+    out property <int> seeding: 6;
+}

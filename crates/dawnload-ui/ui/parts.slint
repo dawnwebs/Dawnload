@@ -1,0 +1,445 @@
+// The brand's own controls: the Cut D, pills (buttons, toggles, chips), switches, segmented
+// choices, list rows. Every interactive part is focusable, activates with Space or Return, and
+// tells assistive technology its role, label and state.
+
+import { Theme, S } from "theme.slint";
+
+export struct RowData {
+    // 0 = section header, 1 = item.
+    kind: int,
+    id: int,
+    title: string,
+    subline: string,
+    trailing: string,
+    status: int,
+    fill: float,
+    // Pulling with no known size: the loader.
+    loading: bool,
+    // Headers.
+    header: string,
+    count: int,
+    torrent: bool,
+    // One sentence for screen readers (present::accessible_label).
+    a11y: string,
+    // Has a file on disk to open or show.
+    has-file: bool,
+}
+
+// MARK: - The Cut D (docs/brand/source/geo.py; Sources/Dawnload/Design/CutD.swift)
+
+export component CutD inherits Rectangle {
+    in property <int> status;
+    in property <float> fill;
+    // Pulling, size unknown: the arrow passes down through the D.
+    in property <bool> loading;
+    // The colour cuts are punched with (the row behind the glyph).
+    in property <color> punch: Theme.canvas;
+    // Ease the fill between samples (the inspector). Rows step instead: hundreds of rows easing
+    // at once would keep the window redrawing at full frame rate.
+    in property <bool> eased: false;
+    private property <length> s: self.height / 2;
+    private property <string> d: "M 0.53 0 A 1 1 0 0 1 0.53 2 L 0.18 2 Q 0 2 0 1.82 L 0 0.18 Q 0 0 0.18 0 Z";
+    private property <color> body: status == S.failed ? Theme.failed
+        : status == S.kept || status == S.seeding ? Theme.kept
+        : status == S.paused || status == S.queued ? Theme.text2
+        : Theme.progress;
+    private property <float> filled: status == S.queued || loading ? 0 : status == S.pulling || status == S.paused ? fill : 1;
+    width: self.height * 0.765;
+    accessible-role: none;
+    animate filled { duration: eased && !Theme.reduce-motion ? 200ms : 0ms; easing: linear; }
+
+    // The empty part of the D.
+    if status != S.queued : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: root.d;
+        fill: Theme.track;
+    }
+    // The fill, from the top.
+    Rectangle {
+        y: 0; width: parent.width; height: parent.height * root.filled;
+        clip: true;
+        Path {
+            y: 0; width: root.width; height: root.height;
+            viewbox-width: 1.53; viewbox-height: 2;
+            commands: root.d;
+            fill: root.body;
+        }
+    }
+    // Queued: the D in outline with three dots.
+    if status == S.queued : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: root.d + " M 0.6428 0.24 A 0.76 0.76 0 0 0 0.6428 1.76 L 0.3768 1.76 Q 0.24 1.76 0.24 1.6232 L 0.24 0.3768 Q 0.24 0.24 0.3768 0.24 Z";
+        fill: root.body;
+    }
+    if status == S.queued : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.415 1 L 0.415 1 M 0.765 1 L 0.765 1 M 1.115 1 L 1.115 1";
+        stroke: root.body; stroke-width: root.s * 0.22; stroke-line-cap: round;
+    }
+    // The cut for each state.
+    if status == S.pulling && !loading : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.765 0.48 L 0.765 1.4 M 0.325 0.96 L 0.765 1.4 L 1.205 0.96";
+        stroke: root.punch; stroke-width: root.s * 0.32; stroke-line-cap: round;
+    }
+    // The loader: the only repeating motion, and only while the size is unknown. Reduce Motion
+    // holds it still in the middle.
+    if status == S.pulling && loading : Rectangle {
+        width: parent.width; height: parent.height;
+        clip: true;
+        property <float> t: Theme.reduce-motion ? 0.5 : mod(animation-tick() / 1400ms, 1.0);
+        Path {
+            y: (parent.t - 0.5) * parent.height * 1.6;
+            width: parent.width; height: parent.height;
+            viewbox-width: 1.53; viewbox-height: 2;
+            commands: "M 0.765 0.48 L 0.765 1.4 M 0.325 0.96 L 0.765 1.4 L 1.205 0.96";
+            stroke: Theme.progress; stroke-width: root.s * 0.32; stroke-line-cap: round;
+        }
+    }
+    if status == S.seeding : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.765 1.52 L 0.765 0.6 M 0.325 1.04 L 0.765 0.6 L 1.205 1.04";
+        stroke: root.punch; stroke-width: root.s * 0.32; stroke-line-cap: round;
+    }
+    if status == S.kept : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.365 1.02 L 0.665 1.32 L 1.185 0.74";
+        stroke: root.punch; stroke-width: root.s * 0.34; stroke-line-cap: round;
+    }
+    if status == S.failed : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.765 0.52 L 0.765 1.08 M 0.765 1.44 L 0.765 1.44";
+        stroke: root.punch; stroke-width: root.s * 0.34; stroke-line-cap: round;
+    }
+    if status == S.paused : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.565 0.64 L 0.565 1.36 M 0.965 0.64 L 0.965 1.36";
+        stroke: root.punch; stroke-width: root.s * 0.3; stroke-line-cap: round;
+    }
+    if status == S.polishing : Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 1.53; viewbox-height: 2;
+        commands: "M 0.405 0.54 L 0.765 0.94 L 1.125 0.54 M 0.765 0.94 L 0.765 1.46";
+        stroke: root.punch; stroke-width: root.s * 0.3; stroke-line-cap: round;
+    }
+}
+
+// MARK: - Controls
+
+// The focus ring: the only glow (DESIGN.md › Shape).
+component FocusRing inherits Rectangle {
+    in property <length> radius;
+    border-radius: self.radius;
+    border-width: 2px;
+    border-color: Theme.link;
+}
+
+// A pill: buttons, chips, toggles. `primary` is the one Signal-filled control in a view.
+export component Pill inherits Rectangle {
+    in property <string> label;
+    in property <bool> on;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    in property <string> mark;
+    // A menu chip's ▾, drawn as a path: Segoe UI (Windows) has no U+25BE.
+    in property <bool> chevron;
+    // A toggle (checkbox for assistive technology) rather than a button.
+    in property <bool> toggle;
+    // Why it's disabled, or what it does: read by screen readers, shown on hover.
+    in property <string> hint;
+    // The arrow in the Download pill moves down 3 px when pressed (DESIGN.md › The pull).
+    in property <bool> pull;
+    in property <length> label-size: 12px;
+    // The pointer is over it (a row's hover action stays shown while the pointer is on it).
+    out property <bool> hovered: touch.has-hover;
+    callback clicked;
+    height: 28px;
+    min-width: row.min-width;
+    preferred-width: row.preferred-width;
+    border-radius: self.height / 2;
+    background: primary ? (touch.pressed ? Theme.action.darker(10%) : Theme.action) : on ? Theme.raised : touch.has-hover && enabled ? Theme.raised.with-alpha(0.5) : transparent;
+    border-width: primary ? 0 : 1px;
+    border-color: on ? Theme.rule.brighter(10%) : Theme.rule;
+    opacity: enabled ? 1 : 0.45;
+    // A toggle is a button with a checked state: screen readers say "toggle button, on".
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.hint;
+    accessible-checkable: root.toggle;
+    accessible-checked: root.toggle && root.on;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+
+    if root.hint != "" : Tooltip { text: @markdown("\{root.hint}"); }
+
+    row := HorizontalLayout {
+        padding-left: 12px; padding-right: 12px; spacing: 6px;
+        if root.mark != "" : Text {
+            text: root.mark; vertical-alignment: center;
+            color: root.primary ? Theme.on-action : Theme.link;
+            font-weight: 700;
+            accessible-role: none;
+            y: root.pull && touch.pressed && !Theme.reduce-motion ? 3px : 0px;
+            animate y { duration: 260ms; easing: cubic-bezier(0.3, 0, 0, 1); }
+        }
+        Text {
+            text: root.label; vertical-alignment: center;
+            color: root.primary ? Theme.on-action : root.on ? Theme.text : Theme.text2;
+            font-size: root.label-size; font-weight: root.primary ? 700 : 500;
+            accessible-role: none;
+        }
+        if root.chevron : Path {
+            width: 8px; height: 5px;
+            y: (parent.height - self.height) / 2;
+            viewbox-width: 8; viewbox-height: 5;
+            commands: "M 1 1 L 4 4 L 7 1";
+            stroke: Theme.text2; stroke-width: 1.5px;
+            stroke-line-cap: round; stroke-line-join: round;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+    fs := FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        key-pressed(event) => {
+            if event.text == " " || event.text == Key.Return {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    if fs.has-focus : FocusRing { radius: root.border-radius; }
+}
+
+// An on/off switch with its label (Settings).
+export component Toggle inherits Rectangle {
+    in property <string> label;
+    in property <string> note;
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+    min-height: col.preferred-height;
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-description: root.note;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.flip(); }
+    opacity: enabled ? 1 : 0.45;
+
+    function flip() {
+        if !root.enabled { return; }
+        root.checked = !root.checked;
+        root.toggled(root.checked);
+    }
+
+    HorizontalLayout {
+        spacing: 16px;
+        col := VerticalLayout {
+            alignment: center; spacing: 2px;
+            horizontal-stretch: 1;
+            Text { text: root.label; color: Theme.text; wrap: word-wrap; accessible-role: none; }
+            if root.note != "" : Text { text: root.note; color: Theme.text2; font-size: 11px; wrap: word-wrap; accessible-role: none; }
+        }
+        Rectangle {
+            width: 36px; height: 20px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 10px;
+            background: root.checked ? Theme.link : transparent;
+            border-width: root.checked ? 0 : 1.5px;
+            border-color: Theme.text2;
+            Rectangle {
+                width: 14px; height: 14px; border-radius: 7px;
+                y: 3px;
+                x: root.checked ? parent.width - self.width - 3px : 3px;
+                background: root.checked ? Theme.canvas : Theme.text2;
+                animate x { duration: Theme.reduce-motion ? 0ms : 120ms; }
+            }
+            if fs.has-focus : FocusRing { radius: 10px; }
+        }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.flip(); }
+    }
+    fs := FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        key-pressed(event) => {
+            if event.text == " " || event.text == Key.Return {
+                root.flip();
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+// One of a few choices, as joined pills (Settings: Appearance, Format, Engine…).
+export component Segmented inherits Rectangle {
+    in property <[string]> options;
+    in property <int> selected;
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback chosen(int);
+    height: 28px;
+    width: seg-row.preferred-width;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: Theme.rule;
+    opacity: enabled ? 1 : 0.45;
+    accessible-role: radio-group;
+    accessible-label: root.label;
+    seg-row := HorizontalLayout {
+        padding: 2px; spacing: 2px;
+        for option[i] in root.options : Rectangle {
+            border-radius: 12px;
+            background: root.selected == i ? Theme.raised : seg-touch.has-hover && root.enabled ? Theme.raised.with-alpha(0.5) : transparent;
+            border-width: root.selected == i ? 1px : 0;
+            border-color: Theme.rule.brighter(10%);
+            min-width: seg-text.preferred-width + 24px;
+            accessible-role: radio-button;
+            accessible-label: option;
+            accessible-checkable: true;
+            accessible-checked: root.selected == i;
+            accessible-enabled: root.enabled;
+            accessible-action-default => { if root.enabled { root.chosen(i); } }
+            seg-text := Text {
+                text: option;
+                color: root.selected == i ? Theme.text : Theme.text2;
+                font-size: 12px; font-weight: root.selected == i ? 600 : 500;
+                accessible-role: none;
+            }
+            seg-touch := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: pointer;
+                clicked => { root.chosen(i); }
+            }
+            seg-fs := FocusScope {
+                enabled: root.enabled;
+                focus-on-click: false;
+                key-pressed(event) => {
+                    if event.text == " " || event.text == Key.Return {
+                        root.chosen(i);
+                        return accept;
+                    }
+                    if event.text == Key.RightArrow && i + 1 < root.options.length { root.chosen(i + 1); return accept; }
+                    if event.text == Key.LeftArrow && i > 0 { root.chosen(i - 1); return accept; }
+                    reject
+                }
+            }
+            if seg-fs.has-focus : FocusRing { radius: 12px; }
+        }
+    }
+}
+
+// A labelled line in Settings: words on the leading side, a control on the trailing side.
+export component SettingRow inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> note;
+    spacing: 24px;
+    VerticalLayout {
+        alignment: center; spacing: 2px;
+        horizontal-stretch: 1;
+        Text { text: root.title; color: Theme.text; wrap: word-wrap; }
+        if root.note != "" : Text { text: root.note; color: Theme.text2; font-size: 11px; wrap: word-wrap; }
+    }
+    @children
+}
+
+export component SectionTitle inherits Text {
+    color: Theme.text2; font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
+    accessible-role: text;
+}
+
+export component SectionHeader inherits Rectangle {
+    in property <string> title;
+    in property <int> count;
+    height: 32px;
+    accessible-role: text;
+    accessible-label: root.title + ", " + root.count;
+    HorizontalLayout {
+        padding-left: 24px; padding-right: 24px; spacing: 8px;
+        alignment: start;
+        Text {
+            text: root.title; vertical-alignment: bottom;
+            color: Theme.text2; font-size: 11px; font-weight: 700;
+            letter-spacing: 0.6px;
+            accessible-role: none;
+        }
+        Text {
+            text: root.count; vertical-alignment: bottom;
+            color: Theme.text2; font-family: Theme.mono; font-size: 10px; font-weight: 700;
+            accessible-role: none;
+        }
+    }
+}
+
+export component Stat inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 2px;
+    Text { text: root.label; color: Theme.text2; font-size: 11px; }
+    Text { text: root.value; color: Theme.text; font-family: Theme.mono; font-size: 12px; }
+}
+
+export component InspectorSection inherits VerticalLayout {
+    in property <string> title;
+    spacing: 8px;
+    Rectangle { height: 1px; background: Theme.rule; }
+    SectionTitle { text: root.title; }
+    @children
+}
+
+// A small round icon button (the header's ⋯, a row's drag handle).
+export component IconButton inherits Rectangle {
+    in property <string> label;
+    // "more" (three dots) or "back" (a chevron).
+    in property <string> icon: "more";
+    callback clicked;
+    width: 28px; height: 28px;
+    border-radius: 14px;
+    background: touch.has-hover ? Theme.raised : transparent;
+    border-width: 1px;
+    border-color: Theme.rule;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+    Tooltip { text: @markdown("\{root.label}"); }
+    if root.icon == "more" : Path {
+        width: 14px; height: 14px;
+        viewbox-width: 14; viewbox-height: 14;
+        commands: "M 1.7 7 A 1.3 1.3 0 1 0 4.3 7 A 1.3 1.3 0 1 0 1.7 7 Z M 5.7 7 A 1.3 1.3 0 1 0 8.3 7 A 1.3 1.3 0 1 0 5.7 7 Z M 9.7 7 A 1.3 1.3 0 1 0 12.3 7 A 1.3 1.3 0 1 0 9.7 7 Z";
+        fill: Theme.text2;
+    }
+    if root.icon == "back" : Path {
+        width: 14px; height: 14px;
+        viewbox-width: 14; viewbox-height: 14;
+        commands: "M 8.5 3 L 4.5 7 L 8.5 11";
+        stroke: Theme.text2; stroke-width: 1.8px; stroke-line-cap: round; stroke-line-join: round;
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    fs := FocusScope {
+        focus-on-click: false;
+        key-pressed(event) => {
+            if event.text == " " || event.text == Key.Return { root.clicked(); return accept; }
+            reject
+        }
+    }
+    if fs.has-focus : FocusRing { radius: 14px; }
+}

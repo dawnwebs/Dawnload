@@ -44,7 +44,7 @@ updating rows at 53–63 frames/s. Ubuntu 24.04 on ARM (VM, Wayland, 2026-11-12)
 which 55 MB private (65 MB PSS), ~0% idle, 22% of one core scrolling at 63 frames/s; X11 through
 Xwayland the same. Still worth a run: real Xorg, x64 hardware, Fedora or KDE.
 
-## 3 · The full app, Windows first
+## 3 · The full app, Windows first · built (2026-11-13), macOS parity open
 
 Gate: phase 2 numbers on Windows and Linux.
 - Everything in DESIGN.md: chip menus, Settings (General, Access, Tools, Torrents), first run,
@@ -57,6 +57,44 @@ Gate: phase 2 numbers on Windows and Linux.
   doesn't meet the Slint Royalty-free License's attribution term ([0009](adr/0009-licensing.md)).
 - Windows first (largest audience), then Linux (X11 and Wayland), then macOS parity, at which
   point the Swift app is retired.
+
+**Built** (`dawnload-app`, decisions in [0010](adr/0010-the-desktop-app-shell.md)): the app runs
+the real core by default (`--demo` keeps the demo engine). Chip menus for format, engine (showing
+what Auto picked), Polish, Playlist, impersonation, cookies.txt and folder; the detection line
+with what was detected; several links in one paste; dropped `.torrent`, `.url`, `.webloc`,
+`.desktop` and `.txt` files; row context menus, hover actions, drag to reorder (and Alt+↑/↓);
+the loader; Reduce Motion (following the system, or forced); the keyboard map with Ctrl on
+Windows and Linux. Settings (General, Access, Tools, Torrents placeholder, About) as a page of
+the one window; the Tools screen installs, updates, verifies and points at custom tools and
+names the JavaScript runtime. First run, empty and missing-tool states. About with Slint's
+`AboutSlint`. The tray with a quiet badge, its menu and close to tray; one app per data folder,
+a second launch handing its links over; notifications on Kept and Failed; open and show in
+folder per OS. Window icon, the .exe's icon, the Wayland app ID and a desktop entry, the
+title bar following Light/Dark, accessible roles and labels.
+
+**Tested** in the Windows 11 ARM VM (CI's build): first run, a direct file (249 MB, 4 then 16
+connections), a YouTube video through yt-dlp (merge, remux, smart name), a 404's Failed state
+and Retry, quit mid-download and relaunch (Paused, then resumed), settings that stick across
+relaunch, the tray and its menu, close to tray, notifications (in the Action Center, under
+"Dawnload"), a dropped `.url` file, a second launch handing its link over, Show in Folder and
+Open, the Tools screen installing gallery-dl, About, Dark with a dark title bar, and the UI
+Automation tree Narrator reads. In the Ubuntu 24.04 ARM VM (GNOME 46, Wayland): the same core
+paths, the tray (AppIndicator) and its menu, close to tray, the dock showing Dawnload's name and
+icon, the title bar following Dark, the AT-SPI tree Orca reads. Testing found eight
+problems CI couldn't (listed in [0010](adr/0010-the-desktop-app-shell.md)); seven are fixed, and
+GNOME notifications are only half explained.
+
+**Measured** ([0008](adr/0008-slint-prototype-verdict.md)): Windows 11 on ARM, the real app idle
+at 94 MB working set (59 MB private) and 0.2% of a core, 500 updating rows scrolling at 60
+frames/s for 18.5%; Ubuntu 24.04 on ARM, 134 MB RSS (84 MB PSS) idle, scrolling at 62 frames/s
+for 22.5%. An idle window draws nothing.
+
+**Left open:** macOS parity (the native menu bar, the Dock badge, notifications through
+UserNotifications once the app is a bundle, then retiring the Swift app); Narrator, Orca and
+VoiceOver speaking (their trees are checked, the voices weren't); notifications on GNOME showed
+in this VM only when not tied to the app (Dawnload sends them; see 0010); links dragged from a
+browser (winit reports files only, and nothing on Wayland); editing an item's options in the
+inspector; Windows x64 and HiDPI at 150%; an X11 session.
 
 ## 4 · Torrents on librqbit
 

@@ -1,5 +1,6 @@
-# Measures Dawnload's Slint prototype on Windows: memory and CPU with the window open and idle,
-# with 500 demo items updating, and while the list scrolls. Twin of Scripts/measure-ui.sh.
+# Measures Dawnload's app on Windows: memory and CPU with the window open and idle (the real app
+# on an empty data folder, and the demo engine), with 500 demo items updating, and while the list
+# scrolls. Twin of Scripts/measure-ui.sh.
 #
 #   pwsh Scripts/measure-ui.ps1                      # builds, then measures
 #   pwsh Scripts/measure-ui.ps1 -SecondsPer 60
@@ -75,6 +76,8 @@ $header = @(
 )
 Set-Content -Path $Out -Value $header
 $header | Write-Output
+$realData = Join-Path ([System.IO.Path]::GetTempPath()) "dawnload-measure"
+Scenario "Idle, the real app (empty data folder)" @{ DAWNLOAD_DATA_DIR = $realData }
 Scenario "Idle, empty list" @{ DAWNLOAD_DEMO_ITEMS = "0" }
 Scenario "Idle, 500 items updating" @{ DAWNLOAD_DEMO_ITEMS = "500" }
 Scenario "Scrolling, 500 items updating" @{ DAWNLOAD_DEMO_ITEMS = "500"; DAWNLOAD_UI_AUTOSCROLL = "14" }

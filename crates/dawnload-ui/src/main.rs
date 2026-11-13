@@ -1,194 +1,289 @@
-//! Dawnload's desktop window (Phase 2 prototype). Slint draws; dawnload-core owns the state.
+//! Dawnload's desktop app. Slint draws; dawnload-core owns the state.
 //!
-//! Threads: Slint's event loop on the main thread; the core and a "bridge" task on a small tokio
-//! runtime. The bridge keeps an `api::Mirror`, turns it into rows for the current filter, diffs
-//! them against what's on screen and hands the UI thread only the rows that changed, at most as
-//! often as the core sends batches (4 per second). The UI thread never formats a byte count.
+//! Threads: Slint's event loop on the main thread; the core and the bridge (src/bridge.rs) on a
+//! small tokio runtime. The bridge turns the core's batched diffs into what changed on screen and
+//! hands only that to the UI thread; the UI thread never formats a byte count.
 //!
-//! `dawnload-app` runs the demo engine with 500 items. `dawnload-app --real` runs the real core
-//! (your data folder, your tools). Measurement switches (see Scripts/measure-ui.sh):
-//! DAWNLOAD_UI_STATS=1 prints frames and updates per second; DAWNLOAD_UI_AUTOSCROLL=<px/frame>
-//! scrolls the list up and down forever; DAWNLOAD_UI_EXIT_AFTER=<seconds> quits;
-//! DAWNLOAD_DEMO_ITEMS=<n> changes the demo size.
+//! `dawnload-app [link…]` runs the real core on the person's data folder. One app runs per data
+//! folder: a second launch hands its links to the first and exits (dawnload_core::instance).
+//! `--demo` (or DAWNLOAD_DEMO_ITEMS) runs the demo engine for development and measurement; see
+//! src/demo.rs. Review switches: DAWNLOAD_UI_THEME=light|dark, DAWNLOAD_UI_SELECT_FIRST=1,
+//! DAWNLOAD_UI_PAGE and DAWNLOAD_UI_TAB.
 
 // Release builds on Windows are GUI apps, so no console window opens behind Dawnload. Redirected
 // stderr (the measurement scripts) still works; debug builds keep the console for logs.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-use std::cell::RefCell;
+mod bridge;
+mod demo;
+mod platform;
+mod view;
+
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use dawnload_core::api::{Action, ListFilter, Mirror, Row};
-use dawnload_core::core::{Core, CoreConfig, CoreHandle, Settings};
-use dawnload_core::engine::Lane;
-use dawnload_core::explain::Tone;
-use dawnload_core::model::{ItemId, Quality, Status};
-use dawnload_core::source::{EngineId, EnginePreference, SourceKind};
-use dawnload_core::tools::ToolId;
-use dawnload_core::{format, present};
-use slint::{Model, ModelRc, SharedString, VecModel};
+use dawnload_core::core::{Core, CoreConfig, CoreError};
+use dawnload_core::instance::{self, Handoff};
+use dawnload_core::model::ItemId;
+use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
+use slint::{CloseRequestResponse, ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tokio::sync::mpsc;
+
+use bridge::{Bridge, Frame, UiMessage};
 
 slint::include_modules!();
 
-const FILTERS: [ListFilter; 6] =
-    [ListFilter::All, ListFilter::Active, ListFilter::Waiting, ListFilter::Kept, ListFilter::Failed, ListFilter::Seeding];
-
-fn status_code(status: Status) -> i32 {
-    match status {
-        Status::Queued => 0,
-        Status::Pulling => 1,
-        Status::Polishing => 2,
-        Status::Kept => 3,
-        Status::Failed => 4,
-        Status::Paused => 5,
-        Status::Seeding => 6,
-    }
-}
-
-/// What the UI thread asks the bridge.
-enum UiMessage {
-    Paste(String),
-    Download(String),
-    Filter(usize),
-    Select(Option<ItemId>),
-    MoveSelection(i32),
-    Primary(ItemId),
-    Remove(ItemId),
-    QueueAction,
-    CycleFormat,
-    CycleEngine,
-    TogglePolish,
-    TogglePlaylist,
-}
-
-/// What the bridge hands the UI thread. Everything is plain data (Send).
-#[derive(Default)]
-struct Frame {
-    /// The list's new length (rows are added or dropped at the end), then `patch` rewrites rows.
-    /// The list is never reset, so the ListView keeps its scroll position and only redraws
-    /// rows that changed and are on screen.
-    resize: Option<usize>,
-    patch: Vec<(usize, RowData)>,
-    filters: Option<Vec<FilterTab>>,
-    queue_label: Option<String>,
-    empty_line: Option<String>,
-    inspector: Option<(InspectorData, Vec<FileRow>)>,
-    selected: Option<i32>,
-    detection: Option<(String, i32, bool)>,
-    clear_paste: bool,
-    chips: Option<(String, String, bool, bool, String)>,
-    tools: Option<(String, bool)>,
-}
-
-#[derive(Default)]
-struct Counters {
-    frames: AtomicU64,
-    batches: AtomicU64,
-    rows_patched: AtomicU64,
-    resets: AtomicU64,
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let real = std::env::args().any(|a| a == "--real");
-    let demo_items: usize = std::env::var("DAWNLOAD_DEMO_ITEMS").ok().and_then(|v| v.parse().ok()).unwrap_or(500);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let demo_items: Option<usize> = std::env::var("DAWNLOAD_DEMO_ITEMS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .or_else(|| args.iter().any(|a| a == "--demo").then_some(500));
+    let real = demo_items.is_none();
+    let links = instance::links_from_args(args.iter().filter(|a| *a != "--real" && *a != "--demo").cloned());
     let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
+    let _enter = runtime.enter();
+    if let Some(note) = dawnload_core::paths::migrate_legacy_data_dir() {
+        eprintln!("dawnload-app: {note}");
+    }
+    let data_dir = dawnload_core::paths::data_dir();
 
-    let core = runtime.block_on(async {
-        let config = if real { CoreConfig::new(dawnload_core::paths::data_dir()) } else { CoreConfig::demo() };
-        Core::start(config)
-    })?;
+    // One app per data folder: hand what we were given to the running one.
+    let handoff = Handoff { links, show: true };
+    if real && runtime.block_on(instance::send(&data_dir, &handoff)).is_ok() {
+        return Ok(());
+    }
 
+    let core = if real {
+        let mut started = Core::start(CoreConfig::new(data_dir.clone()));
+        // Two launches at once: the other one may still be setting up its listener.
+        for _ in 0..10 {
+            let Err(CoreError::AlreadyRunning(_)) = &started else { break };
+            std::thread::sleep(Duration::from_millis(200));
+            if runtime.block_on(instance::send(&data_dir, &handoff)).is_ok() {
+                return Ok(());
+            }
+            started = Core::start(CoreConfig::new(data_dir.clone()));
+        }
+        match started {
+            Ok(core) => core,
+            Err(e) => return show_error(&e.to_string()),
+        }
+    } else {
+        Core::start(CoreConfig::demo())?
+    };
+    let handoffs = if real { instance::listen(&data_dir).ok() } else { None };
+
+    platform::init_identity(&data_dir);
     let app = AppWindow::new()?;
-    app.set_mode_note(if real { SharedString::new() } else { format!("demo · {demo_items} items").into() });
+    platform::set_app_id();
+    let (mod_key, reveal, computer) = platform::words();
+    let theme = app.global::<Theme>();
+    theme.set_mod_key(mod_key.into());
+    theme.set_reveal(reveal.into());
+    theme.set_computer(computer.into());
+    theme.set_no_preference_is_light(cfg!(target_os = "linux"));
+    app.set_version(env!("CARGO_PKG_VERSION").into());
+    app.set_mode_note(match demo_items {
+        Some(n) => format!("demo · {n} items").into(),
+        None => SharedString::new(),
+    });
     let rows = Rc::new(VecModel::<RowData>::default());
     app.set_rows(ModelRc::from(rows.clone()));
-    let filters = Rc::new(VecModel::<FilterTab>::default());
-    app.set_filters(ModelRc::from(filters.clone()));
-    let files = Rc::new(VecModel::<FileRow>::default());
-    app.set_inspector_files(ModelRc::from(files.clone()));
+    app.set_filters(ModelRc::from(Rc::new(VecModel::<FilterTab>::default())));
+    app.set_inspector_files(ModelRc::from(Rc::new(VecModel::<FileRow>::default())));
+    app.set_tools(ModelRc::from(Rc::new(VecModel::<ToolRow>::default())));
 
-    let counters = Arc::new(Counters::default());
+    let counters = Arc::new(demo::Counters::default());
     let (ui_tx, ui_rx) = mpsc::unbounded_channel::<UiMessage>();
+    wire_callbacks(&app, &ui_tx);
 
-    // UI → bridge.
-    {
-        let tx = ui_tx.clone();
-        app.on_paste_edited(move |text| drop(tx.send(UiMessage::Paste(text.to_string()))));
-        let tx = ui_tx.clone();
+    // The tray, where the desktop has one.
+    let tray_available = platform::tray_available();
+    let tray = if tray_available { Tray::new().ok() } else { None };
+    if let Some(tray) = &tray {
         let weak = app.as_weak();
-        app.on_download(move || {
+        tray.on_show_window(move || show_window(&weak));
+        let tx = ui_tx.clone();
+        tray.on_queue(move || drop(tx.send(UiMessage::QueueAction)));
+        let weak = app.as_weak();
+        tray.on_settings(move || {
+            show_window(&weak);
             if let Some(app) = weak.upgrade() {
-                let _ = tx.send(UiMessage::Download(app.get_paste_text().to_string()));
+                app.set_page(1);
             }
         });
+        let weak = app.as_weak();
+        tray.on_about(move || {
+            show_window(&weak);
+            if let Some(app) = weak.upgrade() {
+                app.set_page(3);
+            }
+        });
+        tray.on_quit(|| drop(slint::quit_event_loop()));
+    }
+
+    // Closing the window keeps Dawnload in the tray, when there is one and that's the setting.
+    let close_to_tray = Arc::new(AtomicBool::new(false));
+    {
+        let close_to_tray = close_to_tray.clone();
+        app.window().on_close_requested(move || {
+            if close_to_tray.load(Ordering::Relaxed) {
+                CloseRequestResponse::HideWindow
+            } else {
+                let _ = slint::quit_event_loop();
+                CloseRequestResponse::HideWindow
+            }
+        });
+    }
+
+    // Files dragged over and dropped on the window (winit reports files, not text).
+    {
         let tx = ui_tx.clone();
-        app.on_select_filter(move |i| drop(tx.send(UiMessage::Filter(i.max(0) as usize))));
-        let tx = ui_tx.clone();
-        app.on_select(move |id| drop(tx.send(UiMessage::Select((id >= 0).then_some(ItemId(id as u64))))));
-        let tx = ui_tx.clone();
-        app.on_move_selection(move |d| drop(tx.send(UiMessage::MoveSelection(d))));
-        let tx = ui_tx.clone();
-        app.on_primary_action(move |id| drop(tx.send(UiMessage::Primary(ItemId(id as u64)))));
-        let tx = ui_tx.clone();
-        app.on_remove(move |id| drop(tx.send(UiMessage::Remove(ItemId(id as u64)))));
-        let tx = ui_tx.clone();
-        app.on_queue_action(move || drop(tx.send(UiMessage::QueueAction)));
-        let tx = ui_tx.clone();
-        app.on_cycle_format(move || drop(tx.send(UiMessage::CycleFormat)));
-        let tx = ui_tx.clone();
-        app.on_cycle_engine(move || drop(tx.send(UiMessage::CycleEngine)));
-        let tx = ui_tx.clone();
-        app.on_toggle_polish(move || drop(tx.send(UiMessage::TogglePolish)));
-        let tx = ui_tx.clone();
-        app.on_toggle_playlist(move || drop(tx.send(UiMessage::TogglePlaylist)));
+        let weak = app.as_weak();
+        app.window().on_winit_window_event(move |_, event| {
+            let hover = |on: bool| {
+                if let Some(app) = weak.upgrade() {
+                    app.set_drop_hover(on);
+                }
+            };
+            match event {
+                winit::event::WindowEvent::HoveredFile(_) => hover(true),
+                winit::event::WindowEvent::HoveredFileCancelled => hover(false),
+                winit::event::WindowEvent::DroppedFile(path) => {
+                    hover(false);
+                    let _ = tx.send(UiMessage::Dropped(path.clone()));
+                }
+                _ => {}
+            }
+            EventResult::Propagate
+        });
     }
 
     // Bridge → UI: apply frames on the UI thread.
     let apply = {
         let weak = app.as_weak();
+        let tray = tray.as_ref().map(|t| t.as_weak());
         let counters = counters.clone();
+        let close_to_tray = close_to_tray.clone();
         move |frame: Frame| {
             let weak = weak.clone();
+            let tray = tray.clone();
             let counters = counters.clone();
+            let close_to_tray = close_to_tray.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(app) = weak.upgrade() else { return };
-                apply_frame(&app, frame, &counters);
+                apply_frame(&app, tray.and_then(|t| t.upgrade()).as_ref(), frame, &counters, &close_to_tray);
             });
         }
     };
-
-    runtime.spawn(bridge(core.clone(), ui_rx, apply, counters.clone(), real));
-    if !real {
-        runtime.spawn(demo_driver(core.clone(), demo_items));
+    let bridge = Bridge { core: core.clone(), real, tray_available, own: ui_tx.clone() };
+    runtime.spawn(bridge.run(ui_rx, apply));
+    if let Some(mut handoffs) = handoffs {
+        let tx = ui_tx.clone();
+        runtime.spawn(async move {
+            while let Some(handoff) = handoffs.recv().await {
+                let _ = tx.send(UiMessage::Handoff(handoff));
+            }
+        });
+    }
+    if !handoff.links.is_empty() {
+        let _ = ui_tx.send(UiMessage::Handoff(handoff));
+    }
+    if let Some(count) = demo_items {
+        runtime.spawn(demo::demo_driver(core.clone(), count));
     }
 
-    app.global::<Theme>().set_no_preference_is_light(cfg!(target_os = "linux"));
-    // Review switches: DAWNLOAD_UI_THEME=light|dark, DAWNLOAD_UI_SELECT_FIRST=1.
     match std::env::var("DAWNLOAD_UI_THEME").as_deref() {
-        Ok("light") => app.global::<Theme>().set_mode(2),
-        Ok("dark") => app.global::<Theme>().set_mode(1),
+        Ok("light") => theme.set_mode(2),
+        Ok("dark") => theme.set_mode(1),
         _ => {}
     }
     app.set_ease_rows(std::env::var("DAWNLOAD_UI_EASE_ROWS").is_ok());
+    // Review switches: DAWNLOAD_UI_PAGE=1|2|3 opens Settings, first run or About after the bridge
+    // has set things up; DAWNLOAD_UI_TAB picks the Settings tab.
+    if let Some(page) = std::env::var("DAWNLOAD_UI_PAGE").ok().and_then(|v| v.parse::<i32>().ok()) {
+        let tab = std::env::var("DAWNLOAD_UI_TAB").ok().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+        let weak = app.as_weak();
+        slint::Timer::single_shot(Duration::from_millis(800), move || {
+            if let Some(app) = weak.upgrade() {
+                app.set_settings_tab(tab);
+                app.set_page(page);
+            }
+        });
+    }
     if std::env::var("DAWNLOAD_UI_SELECT_FIRST").is_ok() {
         let tx = ui_tx.clone();
-        let timer = slint::Timer::default();
-        timer.start(slint::TimerMode::SingleShot, Duration::from_millis(1500), move || {
+        slint::Timer::single_shot(Duration::from_millis(1500), move || {
             let _ = tx.send(UiMessage::MoveSelection(1));
         });
-        std::mem::forget(timer);
     }
-    install_measurement(&app, counters.clone());
-    app.run()?;
+    demo::install_measurement(&app, counters.clone());
+
+    app.show()?;
+    slint::run_event_loop_until_quit()?;
+    let _ = app.hide();
+    drop(tray);
     runtime.block_on(core.shutdown());
     Ok(())
 }
 
-fn apply_frame(app: &AppWindow, frame: Frame, counters: &Counters) {
+fn wire_callbacks(app: &AppWindow, ui_tx: &mpsc::UnboundedSender<UiMessage>) {
+    let tx = ui_tx.clone();
+    app.on_paste_edited(move |text| drop(tx.send(UiMessage::Paste(text.to_string()))));
+    let tx = ui_tx.clone();
+    app.on_submit(move |text, start| drop(tx.send(UiMessage::Submit { text: text.to_string(), start })));
+    let tx = ui_tx.clone();
+    app.on_set_option(move |key, value| drop(tx.send(UiMessage::SetOption(key.to_string(), value))));
+    let tx = ui_tx.clone();
+    app.on_command(move |name| {
+        if name == "quit" {
+            let _ = slint::quit_event_loop();
+        } else {
+            let _ = tx.send(UiMessage::Command(name.to_string()));
+        }
+    });
+    let tx = ui_tx.clone();
+    app.on_tool_action(move |tool, action| {
+        drop(tx.send(UiMessage::ToolAction { tool: tool.to_string(), action: action.to_string() }))
+    });
+    let tx = ui_tx.clone();
+    app.on_select_filter(move |i| drop(tx.send(UiMessage::Filter(i.max(0) as usize))));
+    let tx = ui_tx.clone();
+    app.on_select(move |id| drop(tx.send(UiMessage::Select((id >= 0).then_some(ItemId(id as u64))))));
+    let tx = ui_tx.clone();
+    app.on_move_selection(move |d| drop(tx.send(UiMessage::MoveSelection(d))));
+    let tx = ui_tx.clone();
+    app.on_item_action(move |id, action| drop(tx.send(UiMessage::Item { id: ItemId(id as u64), action: action.to_string() })));
+    let tx = ui_tx.clone();
+    app.on_reorder(move |id, delta| drop(tx.send(UiMessage::Reorder { id: ItemId(id as u64), delta })));
+    let tx = ui_tx.clone();
+    app.on_queue_action(move || drop(tx.send(UiMessage::QueueAction)));
+    let tx = ui_tx.clone();
+    app.on_inspector_toggled(move |on| drop(tx.send(UiMessage::InspectorToggled(on))));
+}
+
+fn show_window(weak: &slint::Weak<AppWindow>) {
+    let Some(app) = weak.upgrade() else { return };
+    let _ = app.show();
+    app.window().set_minimized(false);
+    app.window().with_winit_window(|w| w.focus_window());
+}
+
+/// The title bar follows the in-app appearance where the platform lets it (Windows' immersive
+/// dark mode, the Wayland decorations, macOS' appearance).
+fn set_title_bar_theme(app: &AppWindow, mode: i32) {
+    let theme = match mode {
+        1 => Some(winit::window::Theme::Dark),
+        2 => Some(winit::window::Theme::Light),
+        _ => None,
+    };
+    app.window().with_winit_window(|w| w.set_theme(theme));
+}
+
+fn apply_frame(app: &AppWindow, tray: Option<&Tray>, frame: Frame, counters: &demo::Counters, close_to_tray: &AtomicBool) {
     let rows_model = app.get_rows();
     let rows = rows_model.as_any().downcast_ref::<VecModel<RowData>>().expect("rows model");
     if let Some(len) = frame.resize {
@@ -212,17 +307,7 @@ fn apply_frame(app: &AppWindow, frame: Frame, counters: &Counters) {
     }
     counters.batches.fetch_add(1, Ordering::Relaxed);
     if let Some(tabs) = frame.filters {
-        let model = app.get_filters();
-        let filters = model.as_any().downcast_ref::<VecModel<FilterTab>>().expect("filters model");
-        if filters.row_count() != tabs.len() {
-            filters.set_vec(tabs);
-        } else {
-            for (i, tab) in tabs.into_iter().enumerate() {
-                if filters.row_data(i).as_ref() != Some(&tab) {
-                    filters.set_row_data(i, tab);
-                }
-            }
-        }
+        set_vec(&app.get_filters(), tabs);
     }
     if let Some(label) = frame.queue_label {
         app.set_queue_label(label.into());
@@ -232,466 +317,122 @@ fn apply_frame(app: &AppWindow, frame: Frame, counters: &Counters) {
     }
     if let Some((data, files)) = frame.inspector {
         app.set_inspector(data);
-        let model = app.get_inspector_files();
-        let file_model = model.as_any().downcast_ref::<VecModel<FileRow>>().expect("files model");
-        if file_model.iter().ne(files.iter().cloned()) {
-            file_model.set_vec(files);
-        }
+        set_vec(&app.get_inspector_files(), files);
     }
     if let Some(id) = frame.selected {
         app.set_selected_id(id);
     }
-    if let Some((text, tone, can_submit)) = frame.detection {
+    if let Some((text, tone, kind, can_submit)) = frame.detection {
         app.set_detection(text.into());
         app.set_detection_tone(tone);
+        app.set_detection_kind(kind);
         app.set_can_submit(can_submit);
     }
-    if frame.clear_paste {
-        app.set_paste_text(SharedString::new());
+    if let Some(text) = frame.paste_text {
+        app.set_paste_text(text.into());
     }
-    if let Some((format, engine, polish, playlist, folder)) = frame.chips {
-        app.set_chip_format(format.into());
-        app.set_chip_engine(engine.into());
-        app.set_chip_polish(polish);
-        app.set_chip_playlist(playlist);
-        app.set_chip_folder(folder.into());
+    if let Some(chips) = frame.chips {
+        app.set_chips(chips);
     }
-    if let Some((text, ok)) = frame.tools {
+    if let Some(prefs) = frame.prefs {
+        app.set_prefs(prefs);
+    }
+    if let Some((text, ok)) = frame.tools_pill {
         app.set_tools_text(text.into());
         app.set_tools_ok(ok);
     }
-}
-
-struct BridgeState {
-    mirror: Mirror,
-    filter: ListFilter,
-    selected: Option<ItemId>,
-    shown: Vec<RowData>,
-    item_rows: Vec<ItemId>,
-    detail: Option<dawnload_core::api::ItemDetail>,
-    settings: Settings,
-    real: bool,
-}
-
-async fn bridge(
-    core: CoreHandle,
-    mut ui: mpsc::UnboundedReceiver<UiMessage>,
-    apply: impl Fn(Frame),
-    counters: Arc<Counters>,
-    real: bool,
-) {
-    let _ = counters;
-    let Some(mut sub) = core.subscribe().await else { return };
-    let settings = core.settings().await.unwrap_or_default();
-    let mut state = BridgeState {
-        mirror: Mirror::default(),
-        filter: ListFilter::All,
-        selected: None,
-        shown: Vec::new(),
-        item_rows: Vec::new(),
-        detail: None,
-        settings,
-        real,
-    };
-    apply(Frame { chips: Some(chips(&state.settings)), ..Frame::default() });
-
-    loop {
-        let mut frame = Frame::default();
-        tokio::select! {
-            update = sub.recv() => {
-                let Some(update) = update else { return };
-                let applied = state.mirror.apply(update);
-                if let Some(detail) = applied.detail
-                    && Some(detail.item.id) == state.selected {
-                        state.detail = Some(detail);
-                    }
-                if applied.tools || !state.real {
-                    frame.tools = Some(tools_pill(&state));
-                }
-                refresh(&mut state, &mut frame, applied.structure);
-            }
-            message = ui.recv() => {
-                let Some(message) = message else { return };
-                match message {
-                    UiMessage::Paste(text) => {
-                        let explanation = core.explain(&text, Some(state.settings.defaults.clone())).await;
-                        frame.detection = Some(match explanation {
-                            Some(e) => (e.text, match e.tone { Tone::Neutral => 0, Tone::Warning => 1, Tone::Failed => 2 }, e.can_submit),
-                            None => (String::new(), 0, true),
-                        });
-                    }
-                    UiMessage::Download(text) => match core.add(&text, Some(state.settings.defaults.clone()), true).await {
-                        Ok(id) => {
-                            frame.clear_paste = true;
-                            frame.detection = Some((String::new(), 0, true));
-                            state.selected = Some(id);
-                            frame.selected = Some(id.0 as i32);
-                            sub.watch(Some(id));
-                        }
-                        Err(failure) => frame.detection = Some((failure.sentence(), 2, true)),
-                    },
-                    UiMessage::Filter(index) => {
-                        state.filter = FILTERS.get(index).copied().unwrap_or(ListFilter::All);
-                        refresh(&mut state, &mut frame, true);
-                    }
-                    UiMessage::Select(id) => {
-                        state.selected = id;
-                        state.detail = None;
-                        sub.watch(id);
-                        refresh(&mut state, &mut frame, false);
-                    }
-                    UiMessage::MoveSelection(delta) => {
-                        let current = state.selected.and_then(|id| state.item_rows.iter().position(|i| *i == id));
-                        let next = match current {
-                            Some(i) => (i as i64 + delta as i64).clamp(0, state.item_rows.len() as i64 - 1) as usize,
-                            None if !state.item_rows.is_empty() => 0,
-                            None => continue,
-                        };
-                        let id = state.item_rows[next];
-                        state.selected = Some(id);
-                        state.detail = None;
-                        sub.watch(Some(id));
-                        frame.selected = Some(id.0 as i32);
-                        refresh(&mut state, &mut frame, false);
-                    }
-                    UiMessage::Primary(id) => {
-                        if let Some(item) = state.mirror.item(id) {
-                            match item.status {
-                                Status::Pulling | Status::Polishing => drop(core.act(Action::Pause { id }).await),
-                                Status::Queued | Status::Paused | Status::Failed => drop(core.act(Action::Resume { id }).await),
-                                Status::Seeding => drop(core.act(Action::StopSeeding { id }).await),
-                                Status::Kept => open_folder(state.detail.as_ref().map(|d| d.item.options.destination.clone())),
-                            }
-                        }
-                    }
-                    UiMessage::Remove(id) => {
-                        let _ = core.act(Action::Remove { ids: vec![id] }).await;
-                        if state.selected == Some(id) {
-                            state.selected = None;
-                            state.detail = None;
-                            sub.watch(None);
-                            frame.selected = Some(-1);
-                        }
-                    }
-                    UiMessage::QueueAction => {
-                        let c = &state.mirror.counts;
-                        let action = if c.active > 0 || state.mirror.queue.running {
-                            Action::PauseAll
-                        } else if c.queued > 0 {
-                            Action::StartQueue
-                        } else {
-                            Action::ResumeAll
-                        };
-                        let _ = core.act(action).await;
-                    }
-                    UiMessage::CycleFormat | UiMessage::CycleEngine | UiMessage::TogglePolish | UiMessage::TogglePlaylist => {
-                        let d = &mut state.settings.defaults;
-                        match message {
-                            UiMessage::CycleFormat => d.quality = match d.quality { Quality::Best => Quality::Compatible, Quality::Compatible => Quality::Audio, Quality::Audio => Quality::Best },
-                            UiMessage::CycleEngine => d.engine = match d.engine {
-                                EnginePreference::Auto => EnginePreference::YtDlp,
-                                EnginePreference::YtDlp => EnginePreference::GalleryDl,
-                                EnginePreference::GalleryDl => EnginePreference::Direct,
-                                EnginePreference::Direct => EnginePreference::Auto,
-                            },
-                            UiMessage::TogglePolish => d.polish = !d.polish,
-                            _ => d.playlist = !d.playlist,
-                        }
-                        core.set_settings(state.settings.clone()).await;
-                        frame.chips = Some(chips(&state.settings));
-                    }
-                }
-            }
-        }
-        apply(frame);
+    if let Some(tools) = frame.tools {
+        set_vec(&app.get_tools(), tools);
     }
-}
-
-/// Rebuilds the visible rows and inspector, and diffs against what the UI shows.
-fn refresh(state: &mut BridgeState, frame: &mut Frame, structure: bool) {
-    let rows = state.mirror.rows(state.filter);
-    let mut built = Vec::with_capacity(rows.len());
-    let mut item_rows = Vec::new();
-    for row in &rows {
-        built.push(match row {
-            Row::Header { section, count } => {
-                RowData { kind: 0, header: section.title().into(), count: *count as i32, ..RowData::default() }
-            }
-            Row::Item { id, queue_position } => {
-                item_rows.push(*id);
-                let item = state.mirror.item(*id).expect("item in mirror");
-                RowData {
-                    kind: 1,
-                    id: id.0 as i32,
-                    title: item.title.as_str().into(),
-                    subline: present::subline(item, *queue_position).into(),
-                    trailing: present::trailing(item).into(),
-                    status: status_code(item.status),
-                    fill: item.fill as f32,
-                    torrent: item.source_kind != SourceKind::Web,
-                    ..RowData::default()
-                }
+    if let Some(name) = frame.missing_tool {
+        app.set_missing_tool(name.into());
+    }
+    if let Some(busy) = frame.tools_busy {
+        app.set_tools_busy(busy);
+    }
+    if let Some(note) = frame.tools_note {
+        app.set_tools_note(note.into());
+    }
+    if let Some((line, ok)) = frame.js {
+        app.set_js_line(line.into());
+        app.set_js_ok(ok);
+    }
+    if let Some(text) = frame.copy {
+        app.invoke_copy_text(text.into());
+    }
+    if let Some(page) = frame.page {
+        app.set_page(page);
+    }
+    if let Some((mode, reduce)) = frame.look {
+        // DAWNLOAD_UI_THEME (review) wins over the setting.
+        let mode = match std::env::var("DAWNLOAD_UI_THEME").as_deref() {
+            Ok("dark") => 1,
+            Ok("light") => 2,
+            _ => mode,
+        };
+        app.global::<Theme>().set_mode(mode);
+        app.global::<Theme>().set_reduce_motion(reduce);
+        set_title_bar_theme(app, mode);
+    }
+    if let Some(on) = frame.close_to_tray {
+        close_to_tray.store(on && tray.is_some(), Ordering::Relaxed);
+    }
+    if let Some(on) = frame.show_inspector {
+        app.set_show_inspector(on);
+    }
+    if let (Some(state), Some(tray)) = (frame.tray, tray) {
+        tray.set_busy(state.busy);
+        tray.set_queue_title(state.queue_title.into());
+        tray.set_queue_enabled(state.queue_enabled);
+        tray.set_tip(state.tooltip.into());
+    }
+    if frame.show_window {
+        show_window(&app.as_weak());
+    }
+    if !frame.notify.is_empty() {
+        NOTIFIER.with(|n| {
+            let notifier = n.get_or_init(|| platform::Notifier::new(&dawnload_core::paths::data_dir()));
+            for (title, body) in frame.notify {
+                notifier.notify(title, body);
             }
         });
     }
-    let _ = structure;
-    if built.len() != state.shown.len() {
-        frame.resize = Some(built.len());
-    }
-    for (i, new) in built.iter().enumerate() {
-        if state.shown.get(i) != Some(new) {
-            frame.patch.push((i, new.clone()));
-        }
-    }
-    state.shown = built;
-    state.item_rows = item_rows;
-
-    let counts = &state.mirror.counts;
-    frame.filters =
-        Some(FILTERS.iter().map(|f| FilterTab { title: f.title().into(), count: counts.for_filter(*f) as i32 }).collect());
-    frame.queue_label = Some(
-        if counts.active > 0 || state.mirror.queue.running {
-            "Pause All"
-        } else if counts.queued > 0 {
-            "Start Queue"
-        } else if counts.paused > 0 {
-            "Resume All"
-        } else {
-            ""
-        }
-        .into(),
-    );
-    frame.empty_line = Some(state.filter.empty_line().into());
-    frame.inspector = Some(inspector(state));
-}
-
-fn inspector(state: &BridgeState) -> (InspectorData, Vec<FileRow>) {
-    let Some(item) = state.selected.and_then(|id| state.mirror.item(id)) else {
-        return (InspectorData::default(), Vec::new());
-    };
-    let t = &item.transfer;
-    let percent = match (item.status, t.fraction) {
-        (Status::Pulling | Status::Paused, Some(f)) => format::percent(f),
-        _ => String::new(),
-    };
-    let mut numbers = Vec::new();
-    match (t.bytes_done, t.bytes_total) {
-        (Some(d), Some(total)) if item.status.is_active() || item.status == Status::Paused => {
-            numbers.push(format::bytes_of(d, total))
-        }
-        _ => {}
-    }
-    if item.status.is_active() {
-        if let Some(speed) = t.bytes_per_second {
-            numbers.push(format::speed(speed));
-        }
-        if let Some(left) = t.seconds_left {
-            numbers.push(format::time_left(left));
-        }
-    }
-    if numbers.is_empty() && item.status != Status::Failed {
-        numbers.push(present::subline(item, None));
-    }
-    let swarm = item.swarm.clone().unwrap_or_default();
-    let primary = match item.status {
-        Status::Pulling | Status::Polishing => "Pause",
-        Status::Queued => "Download Now",
-        Status::Paused => "Resume",
-        Status::Failed => "Retry",
-        Status::Seeding => "Stop Seeding",
-        Status::Kept => "Show in Folder",
-    };
-    let detail = state.detail.as_ref().filter(|d| d.item.id == item.id);
-    let files: Vec<FileRow> = detail
-        .map(|d| {
-            d.item
-                .files
-                .iter()
-                .map(|f| FileRow { name: f.name().into(), size: f.size.map(format::bytes).unwrap_or_default().into() })
-                .collect()
-        })
-        .unwrap_or_default();
-    let log = detail
-        .map(|d| {
-            let start = d.log.len().saturating_sub(60);
-            d.log[start..].iter().map(|l| l.chars().take(400).collect::<String>()).collect::<Vec<_>>().join("\n")
-        })
-        .unwrap_or_default();
-    let engine = match item.engine {
-        EngineId::Direct => "built-in HTTP".to_string(),
-        other => other.display_name().to_string(),
-    };
-    let data = InspectorData {
-        present: true,
-        id: item.id.0 as i32,
-        title: item.title.as_str().into(),
-        word: item.status.word().into(),
-        status: status_code(item.status),
-        fill: item.fill as f32,
-        source: item.source.as_str().into(),
-        percent: percent.into(),
-        numbers: numbers.join(" · ").into(),
-        torrent: item.source_kind != SourceKind::Web,
-        peers: swarm.peers.to_string().into(),
-        seeds: swarm.seeds.to_string().into(),
-        down: format::speed(swarm.download_rate).into(),
-        up: format::speed(swarm.upload_rate).into(),
-        uploaded: format::bytes(swarm.uploaded).into(),
-        ratio: format::ratio(swarm.ratio).into(),
-        options: item.options_summary.as_str().into(),
-        engine: engine.into(),
-        failure: item.failure.as_ref().map(|f| f.message.clone()).unwrap_or_default().into(),
-        hint: item.failure.as_ref().and_then(|f| f.hint.clone()).unwrap_or_default().into(),
-        log: log.into(),
-        primary: primary.into(),
-    };
-    (data, files)
-}
-
-fn chips(settings: &Settings) -> (String, String, bool, bool, String) {
-    let d = &settings.defaults;
-    let engine = match d.engine {
-        EnginePreference::Auto => "Auto",
-        EnginePreference::YtDlp => "yt-dlp",
-        EnginePreference::GalleryDl => "gallery-dl",
-        EnginePreference::Direct => "Direct",
-    };
-    let folder = d.destination.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    (d.quality.title().into(), engine.into(), d.polish, d.playlist, folder)
-}
-
-fn tools_pill(state: &BridgeState) -> (String, bool) {
-    if !state.real {
-        return ("Demo engine".into(), true);
-    }
-    if state.mirror.tools.is_empty() {
-        return ("Checking tools".into(), true);
-    }
-    for tool in [ToolId::YtDlp, ToolId::Ffmpeg, ToolId::Deno] {
-        if state.mirror.tools.iter().any(|t| t.tool == tool && t.path.is_none()) {
-            return (format!("{} missing", tool.name()), false);
-        }
-    }
-    ("Tools ready".into(), true)
-}
-
-fn open_folder(folder: Option<std::path::PathBuf>) {
-    let Some(folder) = folder else { return };
-    let opener = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(windows) {
-        "explorer"
-    } else {
-        "xdg-open"
-    };
-    let _ = std::process::Command::new(opener).arg(folder).spawn();
-}
-
-/// Keeps ~`count` demo items alive: web items, a tenth of them torrents that seed; finished ones
-/// are cleared and replaced, so the list keeps moving.
-async fn demo_driver(core: CoreHandle, count: usize) {
-    let mut settings = core.settings().await.unwrap_or_default();
-    settings.lane_limits.insert(Lane::Demo, (count / 2).max(1));
-    settings.defaults.seed_ratio_limit = Some(1.5);
-    core.set_settings(settings).await;
-    let mut serial = 0u64;
-    let mut add = |n: usize| {
-        let core = core.clone();
-        let start = serial;
-        serial += n as u64;
-        async move {
-            for i in start..start + n as u64 {
-                let text = if i % 10 == 3 {
-                    let hash = format!("{:040x}", (i as u128 + 1) * 0x9E37_79B9_7F4A_7C15_u128);
-                    format!("magnet:?xt=urn:btih:{}&dn=Open+Movie+Collection+{i}", &hash[hash.len() - 40..])
-                } else {
-                    format!("https://media.example.org/watch/{i}")
-                };
-                let _ = core.add(&text, None, true).await;
-            }
-        }
-    };
-    add(count).await;
-    loop {
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        let Some(snapshot) = core.snapshot().await else { return };
-        let mut finished: Vec<_> = snapshot.items.iter().filter(|i| matches!(i.status, Status::Kept | Status::Failed)).collect();
-        if finished.len() > count / 4 {
-            finished.sort_by_key(|i| i.finished_at);
-            let ids: Vec<ItemId> = finished.iter().take(20).map(|i| i.id).collect();
-            let n = ids.len();
-            let _ = core.act(Action::Remove { ids }).await;
-            add(n).await;
-        }
-    }
-}
-
-/// FPS counting, auto-scroll and auto-exit for Scripts/measure-ui.sh.
-fn install_measurement(app: &AppWindow, counters: Arc<Counters>) {
-    let stats = std::env::var("DAWNLOAD_UI_STATS").is_ok();
-    let autoscroll: Option<f32> = std::env::var("DAWNLOAD_UI_AUTOSCROLL").ok().and_then(|v| v.parse().ok());
-    let exit_after: Option<u64> = std::env::var("DAWNLOAD_UI_EXIT_AFTER").ok().and_then(|v| v.parse().ok());
-
-    let frame_counter = counters.clone();
-    let _ = app.window().set_rendering_notifier(move |state, _| {
-        if let slint::RenderingState::AfterRendering = state {
-            frame_counter.frames.fetch_add(1, Ordering::Relaxed);
-        }
-    });
-
-    thread_local! {
-        static TIMERS: RefCell<Vec<slint::Timer>> = const { RefCell::new(Vec::new()) };
-    }
-    if stats {
-        let timer = slint::Timer::default();
-        let mut last = (0u64, 0u64, 0u64, 0u64);
-        let started = std::time::Instant::now();
-        timer.start(slint::TimerMode::Repeated, Duration::from_secs(1), move || {
-            let now = (
-                counters.frames.load(Ordering::Relaxed),
-                counters.batches.load(Ordering::Relaxed),
-                counters.rows_patched.load(Ordering::Relaxed),
-                counters.resets.load(Ordering::Relaxed),
-            );
-            eprintln!(
-                "stats t={:.0}s fps={} frames_applied={} rows_patched={} list_resizes={}",
-                started.elapsed().as_secs_f64(),
-                now.0 - last.0,
-                now.1 - last.1,
-                now.2 - last.2,
-                now.3 - last.3
-            );
-            last = now;
-        });
-        TIMERS.with(|t| t.borrow_mut().push(timer));
-    }
-    if let Some(speed) = autoscroll {
+    if let Some(text) = frame.notice {
+        app.set_notice(text.clone().into());
         let weak = app.as_weak();
-        let direction = Rc::new(RefCell::new(1.0f32));
-        let timer = slint::Timer::default();
-        timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
-            let Some(app) = weak.upgrade() else { return };
-            // viewport-y runs from 0 down to -(content - visible).
-            let rows = app.get_rows().row_count() as f32;
-            let max = (rows * 56.0 - app.get_list_height()).max(0.0);
-            let mut dir = direction.borrow_mut();
-            let mut y = -app.get_list_scroll() + speed * *dir;
-            if y >= max {
-                y = max;
-                *dir = -1.0;
-            } else if y <= 0.0 {
-                y = 0.0;
-                *dir = 1.0;
+        slint::Timer::single_shot(Duration::from_secs(5), move || {
+            if let Some(app) = weak.upgrade()
+                && app.get_notice() == text.as_str()
+            {
+                app.set_notice(SharedString::new());
             }
-            app.set_list_scroll(-y);
         });
-        TIMERS.with(|t| t.borrow_mut().push(timer));
     }
-    if let Some(seconds) = exit_after {
-        let timer = slint::Timer::default();
-        timer.start(slint::TimerMode::SingleShot, Duration::from_secs(seconds), || {
-            let _ = slint::quit_event_loop();
-        });
-        TIMERS.with(|t| t.borrow_mut().push(timer));
+}
+
+thread_local! {
+    static NOTIFIER: std::cell::OnceCell<platform::Notifier> = const { std::cell::OnceCell::new() };
+}
+
+/// Replaces a VecModel's rows, touching only rows that changed.
+fn set_vec<T: Clone + PartialEq + 'static>(model: &ModelRc<T>, items: Vec<T>) {
+    let Some(vec) = model.as_any().downcast_ref::<VecModel<T>>() else { return };
+    if vec.row_count() != items.len() {
+        vec.set_vec(items);
+    } else {
+        for (i, item) in items.into_iter().enumerate() {
+            if vec.row_data(i).as_ref() != Some(&item) {
+                vec.set_row_data(i, item);
+            }
+        }
     }
+}
+
+fn show_error(message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("dawnload-app: {message}");
+    let window = MessageWindow::new()?;
+    window.set_message(message.into());
+    window.on_dismiss(|| drop(slint::quit_event_loop()));
+    window.run()?;
+    Ok(())
 }

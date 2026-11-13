@@ -8,6 +8,7 @@
 //! grouping, ordering and queue positions are the same everywhere.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +43,12 @@ pub struct ItemView {
     pub folder_name: String,
     pub created_at: i64,
     pub finished_at: Option<i64>,
+    /// The first file it kept (or is writing), for Open and Show in Folder.
+    #[serde(default)]
+    pub primary_file: Option<PathBuf>,
+    /// The folder it downloads into.
+    #[serde(default)]
+    pub folder: PathBuf,
 }
 
 impl ItemView {
@@ -65,6 +72,8 @@ impl ItemView {
             folder_name: item.options.destination.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
             created_at: item.created_at,
             finished_at: item.finished_at,
+            primary_file: item.kept_files().next().or_else(|| item.files.first()).map(|f| PathBuf::from(&f.path)),
+            folder: item.options.destination.clone(),
         }
     }
 }
@@ -326,6 +335,10 @@ pub struct Applied {
     pub detail: Option<ItemDetail>,
     pub notices: Vec<String>,
     pub tools: bool,
+    /// Items that just finished (Kept, Failed, or Kept and now seeding) in this batch, with
+    /// their new status: what a UI notifies about. Never filled by a snapshot, so a relaunch
+    /// doesn't announce old news.
+    pub finished: Vec<(ItemId, Status)>,
 }
 
 /// A UI's copy of the core's state, kept current by applying updates.
@@ -358,9 +371,13 @@ impl Mirror {
                 for change in batch.changes {
                     match change {
                         Change::Upsert { item } => {
-                            match self.items.get(&item.id) {
+                            let old = self.items.get(&item.id);
+                            match old {
                                 Some(old) if old.status == item.status && old.finished_at == item.finished_at => {}
                                 _ => applied.structure = true,
+                            }
+                            if item.status.is_finished() && !old.is_some_and(|o| o.status.is_finished()) {
+                                applied.finished.push((item.id, item.status));
                             }
                             applied.changed.push(item.id);
                             self.items.insert(item.id, item);

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Measures Dawnload's Slint prototype: memory and CPU with the window open and idle, with 500
-# demo items updating, and while the list scrolls. macOS and Linux (Scripts/measure-ui.ps1 is
-# the Windows twin). Needs a desktop session: the window must be on screen.
+# Measures Dawnload's app: memory and CPU with the window open and idle (the real app on an
+# empty data folder, and the demo engine), with 500 demo items updating, and while the list
+# scrolls. macOS and Linux (Scripts/measure-ui.ps1 is the Windows twin). Needs a desktop
+# session: the window must be on screen.
 #
 #   Scripts/measure-ui.sh            # release build, 30 s per scenario
 #   SECONDS_PER=60 Scripts/measure-ui.sh
@@ -80,6 +81,7 @@ scenario() { # name, env...
   echo "| Scenario | RSS avg (MB) | RSS peak (MB) | Footprint/PSS (MB) | CPU (one core) | Frames/s | Rows patched/s |"
   echo "|---|---|---|---|---|---|---|"
 } | tee "$OUT"
+scenario "Idle, the real app (empty data folder)" DAWNLOAD_DATA_DIR="${TMPDIR:-/tmp}/dawnload-measure" DAWNLOAD_NO_DESKTOP_ENTRY=1
 scenario "Idle, empty list" DAWNLOAD_DEMO_ITEMS=0
 scenario "Idle, 500 items updating" DAWNLOAD_DEMO_ITEMS=500
 scenario "Scrolling, 500 items updating" DAWNLOAD_DEMO_ITEMS=500 DAWNLOAD_UI_AUTOSCROLL=14
