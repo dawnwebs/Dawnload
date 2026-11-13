@@ -295,8 +295,9 @@ export component AppWindow inherits Window {
         root.submit(paste.text, true);
     }
 
-    // The paste field has the keyboard at launch: Ctrl+V and Return are all it takes.
-    forward-focus: paste;
+    // The list has the keyboard at launch, so an idle window draws nothing (a focused field's
+    // blinking caret redraws it several times a second). Ctrl+V anywhere pastes into the field.
+    forward-focus: keys;
 
     // The keyboard map (DESIGN.md › Keyboard), with Ctrl on Windows and Linux and ⌘ on macOS.
     // Keys the focused control doesn't use bubble up to here.
@@ -317,6 +318,15 @@ export component AppWindow inherits Window {
                     return reject;
                 }
                 if event.text == "l" || event.text == "L" { root.focus-paste(); return accept; }
+                // The field takes its own Ctrl+V; from anywhere else, paste into it.
+                if event.text == "v" || event.text == "V" {
+                    root.page = 0;
+                    paste.focus();
+                    paste.select-all();
+                    paste.paste();
+                    root.paste-edited(paste.text);
+                    return accept;
+                }
                 if event.text == "d" || event.text == "D" { root.submit(root.paste-text, true); return accept; }
                 if event.text == "." { root.command("pause-all"); return accept; }
                 if event.text == "r" || event.text == "R" { root.command("check-tools"); return accept; }
