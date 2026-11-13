@@ -354,3 +354,51 @@ async fn nothing_is_lost_across_quit_and_crash() {
     let fresh = add(&core, "slow-new", false).await;
     assert!(fresh.0 > waiting.0, "ids are never reused ({fresh} after removing {waiting})");
 }
+
+#[tokio::test]
+async fn a_mirror_reports_each_finish_once_for_notifications() {
+    let h = harness(Lane::Web, 2).await;
+    let mut sub = h.core.subscribe().await.unwrap();
+    let mut mirror = Mirror::default();
+    let ok = add(&h.core, "ok", false).await;
+    let fail = add(&h.core, "fail", true).await;
+    let mut finished = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while finished.len() < 2 && tokio::time::Instant::now() < deadline {
+        if let Ok(Some(update)) = tokio::time::timeout(Duration::from_millis(200), sub.recv()).await {
+            finished.extend(mirror.apply(update).finished);
+        }
+    }
+    finished.sort_by_key(|(id, _)| *id);
+    assert_eq!(finished, vec![(ok, Status::Kept), (fail, Status::Failed)]);
+    // A fresh subscriber's snapshot doesn't announce them again.
+    let mut again = h.core.subscribe().await.unwrap();
+    let snapshot = again.recv().await.unwrap();
+    assert!(matches!(snapshot, Update::Snapshot(_)));
+    assert!(Mirror::default().apply(snapshot).finished.is_empty());
+    // Rows know their file for Open and Show in Folder.
+    let view = h.core.snapshot().await.unwrap().items.into_iter().find(|i| i.id == ok).unwrap();
+    assert_eq!(view.primary_file.as_deref(), Some(std::path::Path::new("/tmp/ok")));
+}
+
+#[tokio::test]
+async fn custom_tool_paths_from_settings_win() {
+    let h = harness(Lane::Web, 1).await;
+    let dir = tempfile::tempdir().unwrap();
+    let fake = dir.path().join(dawnload_core::tools::ToolId::YtDlp.executable());
+    std::fs::write(&fake, "#!/bin/sh\necho 2026.01.01\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let mut settings = h.core.settings().await.unwrap();
+    settings.tool_paths.insert(dawnload_core::tools::ToolId::YtDlp, fake.clone());
+    h.core.set_settings(settings).await;
+    let tools = h.core.tool_snapshot().await.unwrap();
+    assert_eq!(tools.path(dawnload_core::tools::ToolId::YtDlp), Some(fake.as_path()));
+    assert_eq!(tools.origins[&dawnload_core::tools::ToolId::YtDlp], dawnload_core::tools::ToolOrigin::Custom);
+    // And it survives a restart through the stored settings.
+    let manager = h.core.tool_manager().await.unwrap();
+    assert_eq!(manager.discover().path(dawnload_core::tools::ToolId::YtDlp), Some(fake.as_path()));
+}
