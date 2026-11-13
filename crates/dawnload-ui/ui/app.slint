@@ -920,22 +920,26 @@ export component AppWindow inherits Window {
             TouchArea { clicked => { root.page = 0; } }
             Rectangle {
                 width: min(560px, parent.width - 48px);
-                height: about.preferred-height + 64px;
+                height: about-col.preferred-height;
                 background: Theme.canvas;
                 border-radius: Theme.radius-card;
                 border-width: 1px;
                 border-color: Theme.rule;
                 TouchArea {}
-                about := AboutCard {
-                    x: 32px; y: 32px; width: parent.width - 64px;
-                    version: root.version;
-                    command(name) => { root.command(name); }
-                }
-                Pill {
-                    x: parent.width - self.width - 20px; y: 20px;
-                    width: self.preferred-width;
-                    label: "Close";
-                    clicked => { root.page = 0; keys.focus(); }
+                about-col := VerticalLayout {
+                    padding: 32px; padding-top: 20px; spacing: 4px;
+                    HorizontalLayout {
+                        alignment: end;
+                        Pill {
+                            label: "Close";
+                            hint: "Esc";
+                            clicked => { root.page = 0; keys.focus(); }
+                        }
+                    }
+                    AboutCard {
+                        version: root.version;
+                        command(name) => { root.command(name); }
+                    }
                 }
             }
         }
