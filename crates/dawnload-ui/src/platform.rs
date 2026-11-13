@@ -39,10 +39,10 @@ pub fn open_path(path: &Path) {
     {
         use windows::Win32::UI::Shell::ShellExecuteW;
         use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        use windows::core::{HSTRING, w};
+        use windows::core::{HSTRING, PCWSTR, w};
         let target = HSTRING::from(path.as_os_str());
         unsafe {
-            ShellExecuteW(None, w!("open"), &target, None, None, SW_SHOWNORMAL);
+            ShellExecuteW(None, w!("open"), &target, PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
         }
     }
     #[cfg(target_os = "macos")]
@@ -64,9 +64,9 @@ pub fn open_url(url: &str) {
     {
         use windows::Win32::UI::Shell::ShellExecuteW;
         use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        use windows::core::{HSTRING, w};
+        use windows::core::{HSTRING, PCWSTR, w};
         unsafe {
-            ShellExecuteW(None, w!("open"), &HSTRING::from(url), None, None, SW_SHOWNORMAL);
+            ShellExecuteW(None, w!("open"), &HSTRING::from(url), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
         }
     }
     #[cfg(not(windows))]

@@ -194,7 +194,8 @@ impl Bridge {
                         }
                         self.tools_frame(&state, &mut frame);
                     }
-                    for (id, status) in applied.finished {
+                    // The demo engine finishes hundreds of items a minute: no notifications for it.
+                    for (id, status) in applied.finished.into_iter().filter(|_| self.real) {
                         if let Some(note) = view::notification(&state.settings, &state.mirror, id, status) {
                             frame.notify.push(note);
                         }

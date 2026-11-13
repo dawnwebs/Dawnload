@@ -284,7 +284,8 @@ export component AppWindow inherits Window {
         root.submit(paste.text, true);
     }
 
-    forward-focus: keys;
+    // The paste field has the keyboard at launch: Ctrl+V and Return are all it takes.
+    forward-focus: paste;
 
     // The keyboard map (DESIGN.md › Keyboard), with Ctrl on Windows and Linux and ⌘ on macOS.
     // Keys the focused control doesn't use bubble up to here.
