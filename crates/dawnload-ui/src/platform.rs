@@ -170,7 +170,6 @@ pub fn init_identity(data_dir: &Path) {
     windows_impl::register(data_dir);
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let _ = slint::set_xdg_app_id(APP_ID);
         if std::env::var_os("FLATPAK_ID").is_none() && std::env::var_os("DAWNLOAD_NO_DESKTOP_ENTRY").is_none() {
             linux::install_desktop_entry();
         }
@@ -178,6 +177,16 @@ pub fn init_identity(data_dir: &Path) {
     }
     #[cfg(target_os = "macos")]
     let _ = data_dir;
+}
+
+/// The Wayland app ID (and X11 WM_CLASS), so the desktop matches the window to its desktop entry.
+/// Slint keeps it in its platform context: call this after the first component exists and before
+/// its window is shown (before, Slint has no platform yet and ignores it).
+pub fn set_app_id() {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if let Err(e) = slint::set_xdg_app_id(APP_ID) {
+        eprintln!("dawnload-app: no app ID: {e}");
+    }
 }
 
 /// Sends notifications from a thread of its own, so a slow notification service never holds
@@ -312,8 +321,9 @@ mod linux {
 
     pub fn notify(title: &str, body: &str, icon: Option<&Path>) -> zbus::Result<()> {
         let connection = Connection::session()?;
-        let mut hints: HashMap<&str, Value> = HashMap::new();
-        hints.insert("desktop-entry", Value::from(APP_ID));
+        // No `desktop-entry` hint: GNOME 46 silently drops notifications that carry one (tested
+        // on Ubuntu 24.04 with Dawnload's entry and with Files'); the app name and icon suffice.
+        let hints: HashMap<&str, Value> = HashMap::new();
         let icon = icon.map(|p| p.display().to_string()).unwrap_or_default();
         connection.call_method(
             Some("org.freedesktop.Notifications"),

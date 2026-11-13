@@ -78,6 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     platform::init_identity(&data_dir);
     let app = AppWindow::new()?;
+    platform::set_app_id();
     let (mod_key, reveal, computer) = platform::words();
     let theme = app.global::<Theme>();
     theme.set_mod_key(mod_key.into());
