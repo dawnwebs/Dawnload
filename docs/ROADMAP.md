@@ -80,8 +80,14 @@ relaunch, the tray and its menu, close to tray, notifications (in the Action Cen
 Open, the Tools screen installing gallery-dl, About, Dark with a dark title bar, and the UI
 Automation tree Narrator reads. In the Ubuntu 24.04 ARM VM (GNOME 46, Wayland): the same core
 paths, the tray (AppIndicator) and its menu, close to tray, the dock showing Dawnload's name and
-icon, the title bar following Dark, the AT-SPI tree Orca reads. Testing found and fixed eight
-bugs CI couldn't (listed in [0010](adr/0010-the-desktop-app-shell.md)).
+icon, the title bar following Dark, the AT-SPI tree Orca reads. Testing found eight
+problems CI couldn't (listed in [0010](adr/0010-the-desktop-app-shell.md)); seven are fixed, and
+GNOME notifications are only half explained.
+
+**Measured** ([0008](adr/0008-slint-prototype-verdict.md)): Windows 11 on ARM, the real app idle
+at 94 MB working set (59 MB private) and 0.2% of a core, 500 updating rows scrolling at 60
+frames/s for 18.5%; Ubuntu 24.04 on ARM, 134 MB RSS (84 MB PSS) idle, scrolling at 62 frames/s
+for 22.5%. An idle window draws nothing.
 
 **Left open:** macOS parity (the native menu bar, the Dock badge, notifications through
 UserNotifications once the app is a bundle, then retiring the Swift app); Narrator, Orca and

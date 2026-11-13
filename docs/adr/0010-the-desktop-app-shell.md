@@ -88,3 +88,35 @@ from ADR 0008 still in force: about 100 MB idle and smooth scrolling.
   should own them and remove them on uninstall.
 - The plain Linux binary writes a desktop entry pointing at wherever it was run from; packages
   (Flathub, AppImage) will ship their own.
+
+## Tested (2026-11-13)
+
+CI's ARM builds in the Windows 11 ARM VM and the Ubuntu 24.04 ARM VM (GNOME 46, Wayland), as in
+ADR 0008. What real desktops found that CI couldn't, all fixed on the branch:
+
+- **A long link pushed the Download pill out of the paste field** (the text's width widened the
+  row). The field now scrolls inside itself.
+- **Right-clicking a row did nothing**: the row's own TouchArea takes every button before Slint's
+  `ContextMenuArea` sees it. The row opens its menu itself.
+- **Hover actions (Resume, Retry, Show in Folder) only selected the row**: moving onto the pill
+  took the row's hover away and the pill vanished under the pointer. It stays while hovered.
+- **A paused 715 MB file started over on Resume**: Blender's CDN answered the HTTP engine's
+  `Range: bytes=0-0` probe with a 200 (a cache miss) while sending `Accept-Ranges: bytes`. Such
+  files are now resumable (one connection that run); a server that really refuses a range in the
+  middle of a file still stops with "The server stopped resuming downloads", never a wrong file.
+- **Windows data lived in `%LOCALAPPDATA%\Dawn Labs\Dawnload\Dawnload`**, not the documented
+  `%LOCALAPPDATA%\Dawnload` (the `directories` crate nests it). The app and the CLI move it once.
+- **GNOME showed the window as "Unknown"**: `slint::set_xdg_app_id` returns `NoPlatform` until the
+  first component exists. It's set after the window is created and before it's shown.
+- **No notifications on GNOME** with the `desktop-entry` hint: GNOME 46 drops such notifications
+  in this VM (Files' too). The hint is gone. Dawnload's `Notify` calls do reach GNOME (seen on
+  D-Bus), but this VM's GNOME still lists none it can tie to an app, while anonymous ones
+  (`notify-send`, the same call from `gdbus`) show. Worth a check on a stock Ubuntu install.
+- **An idle window redrew 4 times a second** because the paste field had the keyboard at launch
+  and its caret blinked. The list has it now; Ctrl+V anywhere pastes into the field.
+
+Accessibility: Narrator reads Windows' UI Automation tree and Orca reads AT-SPI; both trees were
+dumped from the running app. Buttons and toggles are buttons (toggles with their pressed state),
+filter tabs are tabs with their counts, the list is a list whose items read as one sentence with
+their selection, the paste field is an entry labelled "Link to download". The voices themselves
+weren't listened to.
