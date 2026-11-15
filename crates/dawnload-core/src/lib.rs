@@ -15,6 +15,8 @@ pub mod failure;
 pub mod filename;
 pub mod finishing;
 pub mod format;
+pub mod instance;
+pub mod intake;
 pub mod model;
 pub mod net;
 pub mod paths;
@@ -26,7 +28,7 @@ pub mod tools;
 pub mod ytdlp;
 
 pub use crate::api::{Action, Change, ItemView, ListFilter, Mirror, Row, Section, Snapshot, Update};
-pub use crate::core::{Core, CoreConfig, CoreError, CoreHandle, Settings, Subscription};
+pub use crate::core::{AppPrefs, Appearance, Core, CoreConfig, CoreError, CoreHandle, Motion, Settings, Subscription};
 pub use crate::failure::{DownloadFailure, FailureKind};
 pub use crate::model::{Item, ItemId, Options, Quality, Status};
 pub use crate::source::{DownloadSource, EngineId, EnginePreference};

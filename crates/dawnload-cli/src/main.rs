@@ -220,6 +220,11 @@ fn filter_of(arg: FilterArg) -> ListFilter {
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
+    if cli.data_dir.is_none()
+        && let Some(note) = paths::migrate_legacy_data_dir()
+    {
+        eprintln!("{note}");
+    }
     let data_dir = cli.data_dir.clone().unwrap_or_else(paths::data_dir);
     match run(cli.command, data_dir).await {
         Ok(code) => code,

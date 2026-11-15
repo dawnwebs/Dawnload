@@ -1,6 +1,6 @@
 # 0008 · Slint prototype: measured, Slint confirmed
 
-Status: Accepted, final (2026-11-10). The owner confirmed Slint, with its royalty-free licence (ADR 0009). Windows and Linux (Ubuntu 24.04 on ARM) measured on 2026-11-12 (below).
+Status: Accepted, final (2026-11-10). The owner confirmed Slint, with its royalty-free licence (ADR 0009). Windows and Linux (Ubuntu 24.04 on ARM) measured on 2026-11-12, and the full app (phase 3) on 2026-11-13 (below).
 
 ## Context
 
@@ -176,6 +176,39 @@ For comparison (not measured here): a Tauri window is a system webview process t
 150–300 MB on Windows with WebView2 before any app state, and a list of 500 updating DOM rows
 needs its own virtualization.
 
+## Measurements of the full app (phase 3, 2026-11-13)
+
+The same scripts on the phase 3 app (CI's ARM builds), with a new first row: the real app (real
+core, tool check, tray, first-run card) idle on an empty data folder. One VM ran at a time.
+
+Windows 11 on ARM (`measure-ui.ps1 -Bin`):
+
+| Scenario | Working set avg | Peak | Private | CPU | Frames/s | Rows patched/s |
+|---|---|---|---|---|---|---|
+| Idle, the real app (empty data folder) | 94.0 MB | 94.0 MB | 59.3 MB | 0.2% | 0 | 0 |
+| Idle, empty list | 91.5 MB | 91.5 MB | 58.3 MB | 0.4% | 0 | 0 |
+| Idle, 500 items updating | 97.3 MB | 99.3 MB | 63.2 MB | 14.6% | 12 | 1,403 |
+| Scrolling, 500 items updating | 98.6 MB | 100.2 MB | 64.6 MB | 18.5% | 60 | 1,406 |
+| Scrolling, 500 items, every row's fill eased | 99.0 MB | 100.4 MB | 65.1 MB | 18.9% | 67 | 1,416 |
+
+Ubuntu 24.04 on ARM, Wayland (`BIN=… measure-ui.sh`), accessibility bus off:
+
+| Scenario | RSS avg | Peak | PSS | CPU | Frames/s | Rows patched/s |
+|---|---|---|---|---|---|---|
+| Idle, the real app (empty data folder) | 134.3 MB | 134.3 MB | 84.2 MB | 0.2% | 0 | 0 |
+| Idle, empty list | 131.8 MB | 131.8 MB | 81.7 MB | 0.2% | 0 | 0 |
+| Idle, 500 items updating | 131.0 MB | 131.1 MB | 80.9 MB | 13.7% | 8 | 1,412 |
+| Scrolling, 500 items updating | 131.4 MB | 131.4 MB | 81.5 MB | 22.5% | 62 | 1,395 |
+| Scrolling, 500 items, every row's fill eased | 131.4 MB | 131.6 MB | 81.5 MB | 23.0% | 89 | 1,397 |
+
+- **Still within the targets.** On Windows the real app idles at a 94 MB working set (59 MB private), 14 MB more than the prototype's empty window, for Settings, the tray, notifications and the real core. On Linux PSS is 84 MB (65 MB in phase 2): of it,
+  28 MB heap, 20 MB Dawnload's own code (the binary grew from 37 to 49 MB with Settings, menus,
+  the tray, D-Bus and the file pickers) and 13 MB Mesa's LLVM.
+- **Scrolling stays smooth** at the driver's full rate on both, for about the same CPU as phase 2.
+- **An idle window draws nothing.** A first build gave the paste field the keyboard at launch;
+  its blinking caret cost 4 redraws a second (2–3% of a core in the Windows VM). Fixed.
+- Binaries (release, ARM64): `dawnload-app.exe` 28.5 MB, `dawnload-app` (Linux) 48.7 MB.
+
 ## Decision
 
 **Slint is confirmed** for the full UI (phase 3), and the owner made this final on 2026-11-10. It meets the idle target (96 MB footprint,
@@ -201,4 +234,10 @@ Two choices follow from the numbers:
 - The pieces Slint doesn't hand us: tray icon behaviour per OS, drag and drop of links and
   `.torrent` files, native menus on macOS, notifications.
 - Not in the prototype: chip menus (chips cycle instead), drag to reorder, context menus, the
-  loader animation, Reduce Motion, Settings and first run.
+  loader animation, Reduce Motion, Settings and first run. **Built in phase 3** (ADR 0010).
+
+Of the phase 2 open items, phase 3 closed: the app ID and desktop entry on Linux, the title bar
+following the in-app Light/Dark (Windows, and Wayland's decorations on the next redraw), and
+accessible roles for buttons, toggles, chips and tabs (checked in the UI Automation and AT-SPI
+trees). Still open: the screen readers' voices, IME, HiDPI at 150%/175% on Windows, real Xorg,
+x64 hardware, links dragged from browsers, and native menus on macOS.

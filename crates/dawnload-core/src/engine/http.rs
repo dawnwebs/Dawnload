@@ -92,7 +92,13 @@ struct PartState {
 #[derive(Debug)]
 struct Probe {
     total: Option<u64>,
+    /// The server answered the probe's range with 206: several connections are safe.
     ranges: bool,
+    /// It answered 200 but says `Accept-Ranges: bytes`. CDNs do this on a cache miss (Blender's
+    /// download server did, for a 715 MB file): ranges work later, so the file can be paused and
+    /// continued, but this run uses one connection. A worker that asks for the middle of the file
+    /// and gets a 200 stops with "The server stopped resuming downloads", never a wrong file.
+    advertised: bool,
     etag: Option<String>,
     last_modified: Option<String>,
     filename: Option<String>,
@@ -247,11 +253,14 @@ async fn probe(request: &Request) -> Result<Probe, DownloadFailure> {
     } else {
         (false, response.content_length())
     };
+    let advertised =
+        !ranges && header_text(&headers, header::ACCEPT_RANGES).is_some_and(|v| v.trim().eq_ignore_ascii_case("bytes"));
     drop(response);
     let filename = header_text(&headers, header::CONTENT_DISPOSITION).and_then(|v| content_disposition_filename(&v));
     Ok(Probe {
         total,
         ranges,
+        advertised,
         etag: header_text(&headers, header::ETAG),
         last_modified: header_text(&headers, header::LAST_MODIFIED),
         filename,
@@ -546,7 +555,7 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
     }
     if let Some(saved) = &state {
         let same = saved.total == probe.total
-            && probe.ranges
+            && (probe.ranges || probe.advertised)
             && (saved.etag.is_none() || saved.etag == probe.etag)
             && (saved.last_modified.is_none() || saved.last_modified == probe.last_modified);
         if same {
@@ -584,7 +593,7 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
         }
     }
     segments.retain(|s| s.pos < s.end || s.end == u64::MAX);
-    let resumable = probe.ranges && probe.total.is_some();
+    let resumable = (probe.ranges || probe.advertised) && probe.total.is_some();
     let state = fresh;
     if resumable {
         save_state(&state_file, &state, &segments);
@@ -607,7 +616,14 @@ async fn run(client: reqwest::Client, request: JobRequest, ctx: JobContext) -> J
     let shared = Arc::new(Mutex::new(segments));
     let mut workers = tokio::task::JoinSet::new();
     for _ in 0..connections {
-        workers.spawn(worker(req.clone(), part.clone(), shared.clone(), downloaded.clone(), probe.ranges, ctx.stop.clone()));
+        workers.spawn(worker(
+            req.clone(),
+            part.clone(),
+            shared.clone(),
+            downloaded.clone(),
+            probe.ranges || probe.advertised,
+            ctx.stop.clone(),
+        ));
     }
 
     let started = Instant::now();
@@ -725,6 +741,12 @@ pub(crate) mod test_server {
     }
 
     pub async fn serve(body: Vec<u8>, ranges: bool, delay_per_chunk_ms: u64) -> Server {
+        serve_with(body, ranges, delay_per_chunk_ms, false).await
+    }
+
+    /// `first_full`: the first request gets a 200 with the whole file even if it asked for a
+    /// range (a CDN's cache miss), with `Accept-Ranges: bytes` all the same.
+    pub async fn serve_with(body: Vec<u8>, ranges: bool, delay_per_chunk_ms: u64, first_full: bool) -> Server {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let body = Arc::new(body);
@@ -734,7 +756,7 @@ pub(crate) mod test_server {
             loop {
                 let Ok((mut socket, _)) = listener.accept().await else { return };
                 let body = body.clone();
-                counter.fetch_add(1, Ordering::SeqCst);
+                let nth = counter.fetch_add(1, Ordering::SeqCst);
                 tokio::spawn(async move {
                     let mut buf = vec![0u8; 8192];
                     let mut read = 0;
@@ -753,7 +775,7 @@ pub(crate) mod test_server {
                     let range =
                         text.lines().find_map(|l| l.to_ascii_lowercase().strip_prefix("range: bytes=").map(str::to_string));
                     let total = body.len();
-                    let (status, start, end) = match range.filter(|_| ranges) {
+                    let (status, start, end) = match range.filter(|_| ranges && !(first_full && nth == 0)) {
                         Some(r) => {
                             let (a, b) = r.trim().split_once('-').unwrap();
                             let a: usize = a.parse().unwrap();
@@ -903,6 +925,28 @@ mod tests {
         let (result, events) = run_job(request(&server.url, dir.path(), files), StopSignal::new()).await;
         let outcome = result.unwrap();
         assert_eq!(outcome.files, vec![target.clone()]);
+        assert_eq!(std::fs::read(&target).unwrap(), data);
+        assert!(events.iter().any(|e| matches!(e, JobEvent::Log(l) if l.starts_with("Continuing"))));
+    }
+
+    #[tokio::test]
+    async fn a_cache_miss_on_the_probe_still_pauses_and_continues() {
+        let data = body(4 * MIN_SPLIT as usize);
+        let server = test_server::serve_with(data.clone(), true, 20, true).await;
+        let dir = tempfile::tempdir().unwrap();
+        let stop = StopSignal::new();
+        let stopper = stop.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            stopper.stop();
+        });
+        let (result, events) = run_job(request(&server.url, dir.path(), vec![]), stop).await;
+        assert_eq!(result, Err(JobError::Stopped));
+        assert!(!events.iter().any(|e| matches!(e, JobEvent::Log(l) if l.contains("can't resume"))));
+        let files = events.iter().rev().find_map(|e| if let JobEvent::Files(f) = e { Some(f.clone()) } else { None }).unwrap();
+        let (result, events) = run_job(request(&server.url, dir.path(), files), StopSignal::new()).await;
+        let target = dir.path().join("test file.bin");
+        assert_eq!(result.unwrap().files, vec![target.clone()]);
         assert_eq!(std::fs::read(&target).unwrap(), data);
         assert!(events.iter().any(|e| matches!(e, JobEvent::Log(l) if l.starts_with("Continuing"))));
     }

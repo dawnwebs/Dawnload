@@ -15,5 +15,6 @@ new record that supersedes the old one, rather than an edit.
 | [0007](0007-paste-anything-routing.md) | "Paste anything": routing and the detection line | Accepted |
 | [0008](0008-slint-prototype-verdict.md) | Slint prototype: measured, Slint confirmed | Accepted |
 | [0009](0009-licensing.md) | Licensing of dependencies and tools | Accepted (owner, 2026-11-10) |
+| [0010](0010-the-desktop-app-shell.md) | The desktop app's shell: one window, the tray, one instance, OS services | Accepted, for the owner to review |
 
 Format: Context, Decision, Alternatives, Consequences. Keep each one under two pages.

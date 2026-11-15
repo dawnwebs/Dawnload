@@ -37,6 +37,66 @@ pub struct Settings {
     pub auto_update_tools: bool,
     /// Automatic retries for a dropped connection before an item is Failed.
     pub auto_retries: u32,
+    /// Tools the person pointed at themselves (Settings › Tools › Choose…). They win over
+    /// Dawnload's own copies and the system's.
+    pub tool_paths: BTreeMap<ToolId, PathBuf>,
+    /// The cookies.txt chosen in Settings › Access. The intake's cookies chip turns it on for new
+    /// items (`defaults.cookies`); this keeps the file while the chip is off.
+    pub cookies_file: Option<PathBuf>,
+    /// How the app looks and behaves. The core only stores these.
+    pub app: AppPrefs,
+}
+
+/// Light, dark, or whatever the system says.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
+    #[default]
+    System,
+    Dark,
+    Light,
+}
+
+/// Animation: follow the system's setting, or always reduce it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Motion {
+    #[default]
+    System,
+    Reduce,
+    Full,
+}
+
+/// The app's own preferences (Settings › General), kept with the rest so they survive a reinstall
+/// of the binary and travel with a portable data folder.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppPrefs {
+    pub appearance: Appearance,
+    pub motion: Motion,
+    /// Closing the window keeps Dawnload running in the tray (or menu bar).
+    pub close_to_tray: bool,
+    /// Notify when an item is Kept.
+    pub notify_kept: bool,
+    /// Notify when an item Failed.
+    pub notify_failed: bool,
+    /// The first-run sheet was seen.
+    pub first_run_done: bool,
+    pub show_inspector: bool,
+}
+
+impl Default for AppPrefs {
+    fn default() -> Self {
+        AppPrefs {
+            appearance: Appearance::System,
+            motion: Motion::System,
+            close_to_tray: true,
+            notify_kept: true,
+            notify_failed: true,
+            first_run_done: false,
+            show_inspector: true,
+        }
+    }
 }
 
 impl Default for Settings {
@@ -46,6 +106,9 @@ impl Default for Settings {
             lane_limits: Lane::ALL.into_iter().map(|l| (l, l.default_limit())).collect(),
             auto_update_tools: true,
             auto_retries: 2,
+            tool_paths: BTreeMap::new(),
+            cookies_file: None,
+            app: AppPrefs::default(),
         }
     }
 }
@@ -165,6 +228,7 @@ enum Command {
     ToolSnapshot { reply: oneshot::Sender<ToolSnapshot> },
     ToolsChanged { statuses: Vec<ToolStatus>, notice: Option<String> },
     ToolManager { reply: oneshot::Sender<ToolManager> },
+    RefreshTools { check_updates: bool },
     Shutdown { reply: oneshot::Sender<()> },
 }
 
@@ -232,6 +296,12 @@ impl CoreHandle {
         self.send(|reply| Command::ToolManager { reply }).await.ok()
     }
 
+    /// Reads every tool's version again (and, with `check_updates`, the newest releases);
+    /// subscribers get a `Tools` change when it's done.
+    pub fn refresh_tools(&self, check_updates: bool) {
+        let _ = self.tx.send(Command::RefreshTools { check_updates });
+    }
+
     /// Stops every job (running items become Paused), saves, and ends the core.
     pub async fn shutdown(&self) {
         let _ = self.send(|reply| Command::Shutdown { reply }).await;
@@ -290,6 +360,8 @@ impl Core {
         // Ids are never reused, even after a remove, so `dawnload log 5` always means one item.
         let stored_next: u64 =
             reader.as_ref().and_then(|r| r.setting("next_id").ok().flatten()).and_then(|v| v.parse().ok()).unwrap_or(1);
+        let mut tools = config.tools;
+        apply_tool_paths(&mut tools, &settings);
         let mut actor = Actor {
             next_id: (items.iter().map(|i| i.id.0).max().unwrap_or(0) + 1).max(stored_next),
             order: items.iter().map(|i| i.id).collect(),
@@ -301,7 +373,7 @@ impl Core {
             queue_running: false,
             settings,
             registry: config.registry,
-            tools: config.tools,
+            tools,
             tool_cache: None,
             tool_statuses: Vec::new(),
             engine_override: config.engine_override,
@@ -322,7 +394,7 @@ impl Core {
             done_tx,
             timer_tx,
             watch_tx,
-            _internal_tx: internal_tx.clone(),
+            internal_tx: internal_tx.clone(),
             shutting_down: false,
             _lock: lock,
         };
@@ -371,6 +443,21 @@ fn spawn_tool_check(manager: ToolManager, auto_update: bool, internal: mpsc::Unb
             let _ = internal.send(Internal::Tools { statuses, notice: Some(format!("Updated {}.", updated.join(", "))) });
         }
     });
+}
+
+/// Reads tool versions (and the newest releases, if asked) without updating anything.
+fn spawn_tool_refresh(manager: ToolManager, check_updates: bool, internal: mpsc::UnboundedSender<Internal>) {
+    tokio::spawn(async move {
+        let statuses = if check_updates { manager.check_updates().await } else { manager.status().await };
+        let _ = internal.send(Internal::Tools { statuses, notice: None });
+    });
+}
+
+/// Custom tool paths from Settings become the tool manager's overrides.
+fn apply_tool_paths(tools: &mut ToolManager, settings: &Settings) {
+    for tool in ToolId::ALL {
+        tools.set_override(tool, settings.tool_paths.get(&tool).cloned());
+    }
 }
 
 /// Messages from the core's own background tasks.
@@ -434,7 +521,7 @@ struct Actor {
     done_tx: mpsc::UnboundedSender<(ItemId, u64, JobResult)>,
     timer_tx: mpsc::UnboundedSender<ItemId>,
     watch_tx: mpsc::UnboundedSender<(u64, Option<ItemId>)>,
-    _internal_tx: mpsc::UnboundedSender<Internal>,
+    internal_tx: mpsc::UnboundedSender<Internal>,
     shutting_down: bool,
     _lock: Option<std::fs::File>,
 }
@@ -567,7 +654,13 @@ impl Actor {
                 let _ = reply.send(self.settings.clone());
             }
             Command::SetSettings { settings, reply } => {
+                let tools_moved = settings.tool_paths != self.settings.tool_paths;
                 self.settings = *settings;
+                if tools_moved {
+                    apply_tool_paths(&mut self.tools, &self.settings);
+                    self.tool_cache = None;
+                    spawn_tool_refresh(self.tools.clone(), false, self.internal_tx.clone());
+                }
                 self.store(vec![StoreOp::Setting {
                     key: "settings".into(),
                     value: serde_json::to_string(&self.settings).unwrap_or_default(),
@@ -581,6 +674,10 @@ impl Actor {
             Command::ToolsChanged { statuses, notice } => self.internal(Internal::Tools { statuses, notice }),
             Command::ToolManager { reply } => {
                 let _ = reply.send(self.tools.clone());
+            }
+            Command::RefreshTools { check_updates } => {
+                self.tool_cache = None;
+                spawn_tool_refresh(self.tools.clone(), check_updates, self.internal_tx.clone());
             }
             Command::Shutdown { .. } => unreachable!("handled in run"),
         }
