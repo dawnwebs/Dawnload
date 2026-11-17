@@ -100,11 +100,28 @@ inspector; Windows x64 and HiDPI at 150%; an X11 session.
 
 librqbit embedded in-process behind the existing `DownloadEngine` seam (libtorrent stays the
 backup behind the same trait). No home-grown BitTorrent engine and no built-in torrent search.
-- Magnets, `.torrent` files and links; file selection; Checking; swarm stats; seeding to a ratio or
-  time limit; Stop Seeding ([0003](adr/0003-seeding-inside-the-job.md) already handles the
-  lifecycle).
-- Contribute upstream what we need: rarest-first piece picking and per-torrent rate limits.
-- The Seeding tab and glyph (designed already); the first-use note about sharing.
+Decisions: [0011](adr/0011-torrents-on-librqbit.md), [0012](adr/0012-torrent-state-is-a-cache.md).
+Build plan and acceptance gates: [phase-4-torrents.md](plans/phase-4-torrents.md).
+
+**M1 implemented, acceptance in progress (2026-11-17):** one lazy librqbit 9.1 Session per core;
+magnets, `.torrent` files and HTTP metadata links; Checking, file progress and swarm stats;
+ratio-limit completion and Stop Seeding; `Action::SelectFiles` while running; SQLite metadata
+BLOBs and persisted selections; fast resume and recovery without librqbit's cache. The desktop
+still gates real torrents until M3. All 83 local tests pass, including five real loopback swarm
+tests. The licence gate passes locally. Cross-platform CI and the public Ubuntu ISO exit test
+remain acceptance gates, not completed claims.
+
+The release core probe on this Mac measured 8.94 MiB mean RSS with no torrents and 12.65 MiB
+with five throttled loopback downloads (seeder in a separate process). These are core-only,
+small-fixture measurements; the complete desktop and VM memory budgets remain open.
+CI now records release build wall time and binary bytes on every runner.
+
+- **M2:** ratio/time policies, courtesy mode, automatic upload cap and seeding across restart.
+- **M3:** the real chooser, smart selection, sharing note, Settings and OS handlers.
+- **M4:** connection binding/kill switch and Windows Mark of the Web.
+- **M5:** token-protected loopback playback with seeking.
+- **Upstream:** rarest-first and live per-torrent rate limits remain open. No fork; no protocol
+  encryption or BitTorrent v2-only support. Interop and both VM acceptance runs remain open.
 
 ## 5 · Signing, installers, auto-update, public beta
 

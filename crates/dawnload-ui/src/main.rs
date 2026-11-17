@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let core = if real {
-        let mut started = Core::start(CoreConfig::new(data_dir.clone()));
+        let mut started = Core::start(desktop_core_config(data_dir.clone()));
         // Two launches at once: the other one may still be setting up its listener.
         for _ in 0..10 {
             let Err(CoreError::AlreadyRunning(_)) = &started else { break };
@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if runtime.block_on(instance::send(&data_dir, &handoff)).is_ok() {
                 return Ok(());
             }
-            started = Core::start(CoreConfig::new(data_dir.clone()));
+            started = Core::start(desktop_core_config(data_dir.clone()));
         }
         match started {
             Ok(core) => core,
@@ -435,4 +435,11 @@ fn show_error(message: &str) -> Result<(), Box<dyn std::error::Error>> {
     window.on_dismiss(|| drop(slint::quit_event_loop()));
     window.run()?;
     Ok(())
+}
+
+// Torrent UI remains on demo data until the M3 chooser and sharing note ship.
+fn desktop_core_config(data_dir: std::path::PathBuf) -> CoreConfig {
+    let mut config = CoreConfig::new(data_dir);
+    config.registry.disable_torrents();
+    config
 }

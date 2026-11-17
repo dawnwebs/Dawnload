@@ -53,7 +53,8 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
       - name: Build release binaries
-        run: cargo build --release --locked -p dawnload-cli -p dawnload-ui
+        shell: bash
+        run: python Scripts/measure-rust-build.py
       - uses: actions/upload-artifact@v4
         with:
           name: dawnload-${{ matrix.os }}
@@ -62,6 +63,7 @@ jobs:
             target/release/dawnload.exe
             target/release/dawnload-app
             target/release/dawnload-app.exe
+            target/release-measurements.json
           if-no-files-found: error
 
   licenses:

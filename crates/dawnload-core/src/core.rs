@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::api::{Action, Batch, Change, Counts, ItemDetail, ItemView, QueueState, Snapshot, Update};
+use crate::engine::torrent::{TorrentNetwork, TorrentService};
 use crate::engine::{JobContext, JobError, JobEvent, JobOutcome, JobRequest, JobResult, Lane, Registry};
 use crate::explain::{Explanation, explain};
 use crate::failure::DownloadFailure;
@@ -31,6 +32,8 @@ use crate::tools::{ToolId, ToolManager, ToolSnapshot, ToolStatus};
 pub struct Settings {
     /// What new items download with (the intake chips).
     pub defaults: Options,
+    /// Chosen once per data folder, in the dynamic/private range.
+    pub torrent_port: u16,
     /// Download slots per lane.
     pub lane_limits: BTreeMap<Lane, usize>,
     /// Update Dawnload's own tool copies once a day.
@@ -103,6 +106,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             defaults: Options::default(),
+            torrent_port: 0,
             lane_limits: Lane::ALL.into_iter().map(|l| (l, l.default_limit())).collect(),
             auto_update_tools: true,
             auto_retries: 2,
@@ -133,6 +137,7 @@ pub struct CoreConfig {
     pub single_instance: bool,
     /// Check tool versions in the background at start.
     pub check_tools: bool,
+    pub torrent_network: TorrentNetwork,
 }
 
 impl CoreConfig {
@@ -146,6 +151,7 @@ impl CoreConfig {
             engine_override: None,
             single_instance: true,
             check_tools: true,
+            torrent_network: TorrentNetwork::default(),
         }
     }
 
@@ -331,7 +337,7 @@ impl Core {
             None
         };
 
-        let (items, settings, reader, writer) = match &config.database {
+        let (items, mut settings, reader, writer) = match &config.database {
             Some(path) => {
                 let store = Store::open(path).map_err(|e| CoreError::Store(e.to_string()))?;
                 let items: Vec<Item> = store.load_items().map_err(|e| CoreError::Store(e.to_string()))?;
@@ -347,6 +353,20 @@ impl Core {
             None => (Vec::new(), Settings::default(), None, None),
         };
 
+        if settings.torrent_port < 49152 {
+            let mut random = [0; 2];
+            getrandom::fill(&mut random).map_err(|e| CoreError::Store(e.to_string()))?;
+            settings.torrent_port = 49152 + u16::from_le_bytes(random) % 16384;
+            if let Some(writer) = &writer {
+                writer.send(vec![StoreOp::Setting { key: "settings".into(), value: serde_json::to_string(&settings).unwrap() }]);
+            }
+        }
+        let torrents = std::sync::Arc::new(TorrentService::new(
+            config.data_dir.join("torrents"),
+            settings.torrent_port,
+            config.torrent_network,
+            config.update_interval,
+        ));
         let (tx, rx) = mpsc::unbounded_channel();
         let (events_tx, events_rx) = mpsc::unbounded_channel();
         let (done_tx, done_rx) = mpsc::unbounded_channel();
@@ -365,6 +385,7 @@ impl Core {
         let mut actor = Actor {
             next_id: (items.iter().map(|i| i.id.0).max().unwrap_or(0) + 1).max(stored_next),
             order: items.iter().map(|i| i.id).collect(),
+            torrent_records: HashMap::new(),
             items: HashMap::new(),
             logs: HashMap::new(),
             running: HashMap::new(),
@@ -373,6 +394,7 @@ impl Core {
             queue_running: false,
             settings,
             registry: config.registry,
+            torrents,
             tools,
             tool_cache: None,
             tool_statuses: Vec::new(),
@@ -473,6 +495,7 @@ struct Running {
     stop: StopSignal,
     lane: Lane,
     intent: Option<StopIntent>,
+    selection: tokio::sync::watch::Sender<Vec<usize>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -491,6 +514,7 @@ struct Subscriber {
 
 struct Actor {
     items: HashMap<ItemId, Item>,
+    torrent_records: HashMap<ItemId, crate::engine::torrent::TorrentRecord>,
     order: Vec<ItemId>,
     logs: HashMap<ItemId, VecDeque<String>>,
     running: HashMap<ItemId, Running>,
@@ -500,6 +524,7 @@ struct Actor {
     queue_running: bool,
     settings: Settings,
     registry: Registry,
+    torrents: std::sync::Arc<TorrentService>,
     tools: ToolManager,
     tool_cache: Option<(Instant, ToolSnapshot)>,
     tool_statuses: Vec<ToolStatus>,
@@ -572,7 +597,16 @@ impl Actor {
                         }
                     }
                 }
-                Some((id, run, result)) = done.recv() => self.job_done(id, run, result),
+                Some((id, run, result)) = done.recv() => {
+                    // Events sent before a job resolved must land before its final status.
+                    let pending = events.len();
+                    for _ in 0..pending {
+                        if let Ok((event_id, event_run, event)) = events.try_recv() {
+                            self.event(event_id, event_run, event);
+                        }
+                    }
+                    self.job_done(id, run, result);
+                },
                 Some(id) = timers.recv() => {
                     self.not_before.remove(&id);
                     self.pump();
@@ -601,12 +635,15 @@ impl Actor {
             }
             self.persist(id);
         }
+        self.torrents.shutdown().await;
         self.persist_progress();
         self.flush();
         if let Some(writer) = &self.writer {
             let writer = writer.clone();
             let _ = tokio::task::spawn_blocking(move || writer.flush_blocking()).await;
         }
+        // Shutdown is complete when the caller can immediately reopen the same data folder.
+        drop(self._lock.take());
         if let Some(reply) = shutdown_reply {
             let _ = reply.send(());
         }
@@ -655,7 +692,12 @@ impl Actor {
             }
             Command::SetSettings { settings, reply } => {
                 let tools_moved = settings.tool_paths != self.settings.tool_paths;
+                // A running Session keeps its listening port; port changes take effect next launch.
+                let port = self.settings.torrent_port;
                 self.settings = *settings;
+                if self.settings.torrent_port < 49152 {
+                    self.settings.torrent_port = port;
+                }
                 if tools_moved {
                     apply_tool_paths(&mut self.tools, &self.settings);
                     self.tool_cache = None;
@@ -825,11 +867,40 @@ impl Actor {
                 }
                 self.move_waiting(id, index);
             }
+            Action::SelectFiles { id, mut indices } => {
+                let item = self.items.get_mut(&id).ok_or("No such item.")?;
+                if item.engine != EngineId::Torrent || item.files.is_empty() {
+                    return Err("Wait for the torrent's file list.".into());
+                }
+                if !matches!(item.status, Status::Pulling | Status::Seeding | Status::Paused | Status::Queued | Status::Failed) {
+                    return Err("This torrent has finished. Resume it before changing files.".into());
+                }
+                indices.sort_unstable();
+                indices.dedup();
+                if indices.iter().any(|i| *i >= item.files.len()) {
+                    return Err("No such file.".into());
+                }
+                for (index, file) in item.files.iter_mut().enumerate() {
+                    file.selected = indices.contains(&index);
+                }
+                if let Some(running) = self.running.get(&id) {
+                    running.selection.send_replace(indices);
+                }
+                self.mark(id);
+                self.detail_dirty.insert(id);
+                self.persist(id);
+            }
             Action::SetOptions { id, options } => {
                 let override_engine = self.engine_override;
                 let item = self.items.get_mut(&id).ok_or("No such item.")?;
                 if !item.status.is_editable() {
                     return Err("Its options can change once it's paused or finished.".into());
+                }
+                if item.engine == EngineId::Torrent && !item.files.is_empty() && options.destination != item.options.destination {
+                    return Err(
+                        "A torrent with files keeps its download folder. Remove it and add it again to choose another folder."
+                            .into(),
+                    );
                 }
                 item.engine = override_engine.unwrap_or_else(|| options.engine.resolve(&item.source));
                 item.options = options;
@@ -881,6 +952,7 @@ impl Actor {
     }
 
     fn delete(&mut self, id: ItemId) {
+        let torrent = self.items.get(&id).is_some_and(|i| i.engine == EngineId::Torrent);
         if let Some(item) = self.items.remove(&id)
             && !item.status.has_files()
         {
@@ -890,6 +962,10 @@ impl Actor {
                     let _ = std::fs::remove_file(format!("{}{suffix}", file.path));
                 }
             }
+        }
+        self.torrent_records.remove(&id);
+        if torrent {
+            self.torrents.retire(id);
         }
         self.order.retain(|i| *i != id);
         self.logs.remove(&id);
@@ -964,11 +1040,20 @@ impl Actor {
             tools,
             files: item.files.clone(),
             resuming,
+            torrent: self
+                .torrent_records
+                .get(&id)
+                .cloned()
+                .or_else(|| self.reader.as_ref().and_then(|r| r.torrent(id).ok().flatten())),
         };
         let run = self.next_run;
         self.next_run += 1;
         let stop = StopSignal::new();
-        let context = JobContext::new(id, run, stop.clone(), self.events_tx.clone());
+        let (selection, selection_rx) =
+            tokio::sync::watch::channel(item.files.iter().enumerate().filter(|(_, f)| f.selected).map(|(i, _)| i).collect());
+        let mut context = JobContext::new(id, run, stop.clone(), self.events_tx.clone());
+        context.torrents = Some(self.torrents.clone());
+        context.selection = Some(selection_rx);
         let future = engine.run(request, context);
         let done_tx = self.done_tx.clone();
         tokio::spawn(async move {
@@ -983,7 +1068,7 @@ impl Actor {
             };
             let _ = done_tx.send((id, run, result));
         });
-        self.running.insert(id, Running { run, stop, lane: engine.lane(), intent: None });
+        self.running.insert(id, Running { run, stop, lane: engine.lane(), intent: None, selection });
 
         let item = self.items.get_mut(&id).unwrap();
         item.failure = None;
@@ -1045,10 +1130,21 @@ impl Actor {
                 self.persist_dirty.insert(id);
             }
             JobEvent::Files(files) => {
+                let mut files = files;
+                if item.engine == EngineId::Torrent && item.files.len() == files.len() {
+                    for (new, old) in files.iter_mut().zip(&item.files) {
+                        new.selected = old.selected;
+                    }
+                }
                 item.files = files;
                 self.mark(id);
                 self.detail_dirty.insert(id);
                 self.persist_dirty.insert(id);
+            }
+            JobEvent::Torrent(record) => {
+                self.torrent_records.insert(id, record.clone());
+                self.persist(id);
+                self.store(vec![StoreOp::Torrent { id, record }]);
             }
             JobEvent::Swarm(swarm) => {
                 item.swarm = Some(swarm);
@@ -1094,7 +1190,7 @@ impl Actor {
         if !outcome.files.is_empty() {
             item.files = outcome.files.iter().map(ItemFile::on_disk).collect();
         }
-        let sizes: Vec<u64> = item.files.iter().filter_map(|f| f.size).collect();
+        let sizes: Vec<u64> = item.kept_files().filter_map(|f| f.size).collect();
         let t = &mut item.transfer;
         t.fraction = Some(1.0);
         t.bytes_per_second = None;

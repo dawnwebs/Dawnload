@@ -216,6 +216,11 @@ pub enum Action {
         id: ItemId,
         index: usize,
     },
+    /// Torrent file indices in metadata order. May change while downloading or seeding.
+    SelectFiles {
+        id: ItemId,
+        indices: Vec<usize>,
+    },
     SetOptions {
         id: ItemId,
         options: Options,

@@ -1,7 +1,7 @@
 //! The one HTTP client setup: rustls with the `ring` provider (pure Rust plus a little C/asm,
 //! no cmake or NASM on Windows) and the OS certificate store, so corporate proxies work.
 
-use std::sync::Once;
+use std::sync::{Once, OnceLock};
 use std::time::Duration;
 
 pub const USER_AGENT: &str = concat!("Dawnload/", env!("CARGO_PKG_VERSION"), " (+https://github.com/brenoandrew/Dawnload)");
@@ -22,5 +22,6 @@ pub fn client_builder() -> reqwest::ClientBuilder {
 }
 
 pub fn client() -> reqwest::Client {
-    client_builder().build().expect("HTTP client")
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| client_builder().build().expect("HTTP client")).clone()
 }
