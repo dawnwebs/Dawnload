@@ -161,6 +161,33 @@ fn torrent_error(error: impl std::fmt::Display) -> JobError {
         .into()
 }
 
+/// Portable component rules, applied on every OS. A Windows drive prefix can replace a
+/// destination in PathBuf::push; device names and NTFS streams also have special semantics.
+/// Do not sanitize: changing a component could alias another file in the same torrent.
+fn validate_component(component: &str) -> Result<(), JobError> {
+    let stem = component.split('.').next().unwrap_or_default().trim_end_matches(' ').to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+        || stem
+            .strip_prefix("COM")
+            .or_else(|| stem.strip_prefix("LPT"))
+            .is_some_and(|suffix| matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"));
+    if component.is_empty()
+        || matches!(component, "." | "..")
+        || component.ends_with(['.', ' '])
+        || device
+        || component.chars().any(|c| c < ' ' || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+    {
+        return Err(DownloadFailure::new(
+            FailureKind::Other,
+            "The torrent contains an unsafe file name.",
+            Some("Use a torrent with ordinary file and folder names."),
+        )
+        .with_detail(format!("Rejected torrent path component {component:?}"))
+        .into());
+    }
+    Ok(())
+}
+
 async fn input(request: &JobRequest, offline: bool) -> Result<AddTorrent<'static>, JobError> {
     if let Some(record) = &request.torrent {
         return Ok(AddTorrent::from_bytes(record.metadata.clone()));
@@ -226,6 +253,13 @@ async fn run(request: JobRequest, mut ctx: JobContext) -> JobResult {
         let AddTorrentResponse::ListOnly(listing) = listing else {
             return Err(torrent_error("This torrent already belongs to another item. Pause or remove that item first."));
         };
+        // list_only resolves metadata without opening payload storage. Validate decoded path
+        // components before publishing paths, persisting metadata, or adding a managed torrent.
+        for file in listing.info.iter_file_details() {
+            for component in file.filename.iter_components() {
+                validate_component(&component)?;
+            }
+        }
         let record = TorrentRecord { info_hash: listing.info_hash.as_string(), metadata: listing.torrent_bytes.to_vec() };
         if let Some(stored) = &request.torrent
             && record.info_hash != stored.info_hash
@@ -330,7 +364,7 @@ async fn monitor(
     if handle.is_paused() {
         session.unpause(handle).await.map_err(torrent_error)?;
     }
-    let mut phase = Status::Pulling;
+    let mut phase = (Status::Pulling, Some("Checking"));
     let mut tick = tokio::time::interval(interval);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -390,18 +424,95 @@ async fn monitor(
             uploaded: stats.uploaded_bytes,
             ratio,
         }));
+        let next = if total == 0 {
+            (Status::Pulling, Some("Choose files to download"))
+        } else if stats.finished {
+            (Status::Seeding, None)
+        } else {
+            (Status::Pulling, None)
+        };
+        if next != phase {
+            ctx.phase(next.0, next.1);
+            phase = next;
+        }
         // With no selected files there is no completed download and no reason to seed forever.
         if total == 0 {
-            ctx.phase(Status::Pulling, Some("Choose files to download"));
             continue;
-        }
-        let next = if stats.finished { Status::Seeding } else { Status::Pulling };
-        if next != phase || phase == Status::Pulling {
-            ctx.phase(next, None);
-            phase = next;
         }
         if stats.finished && request.options.seed_ratio_limit.is_some_and(|limit| ratio >= limit) {
             return Ok(JobOutcome::default());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_unicode_and_padding_components_remain_valid() {
+        for name in ["Ubuntu 24.04.iso", "日本語", "café", ".pad", "00001", "company", "COM10.txt", "conifer.txt"] {
+            validate_component(name).unwrap();
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pulling_reports_phase_transitions_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.bin");
+        std::fs::write(&source, vec![17; 256 * 1024]).unwrap();
+        let offline =
+            || SessionOptions { dht: None, disable_trackers: true, disable_local_service_discovery: true, ..Default::default() };
+        let seed = Session::new_with_opts(dir.path().join("seed"), offline()).await.unwrap();
+        let (created, _) = seed.create_and_serve_torrent(&source, librqbit::CreateTorrentOptions::default()).await.unwrap();
+        // No peer addresses are provided to this downloader: it stays Pulling at zero bytes.
+        let session = Session::new_with_opts(dir.path().join("downloads"), offline()).await.unwrap();
+        let handle = session
+            .add_torrent(
+                AddTorrent::from_bytes(created.as_bytes().unwrap()),
+                Some(AddTorrentOptions { paused: true, disable_trackers: true, ..Default::default() }),
+            )
+            .await
+            .unwrap()
+            .into_handle()
+            .unwrap();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let stop = crate::process::StopSignal::new();
+        let mut ctx = JobContext::new(ItemId(1), 1, stop.clone(), sender);
+        let request = JobRequest {
+            item_id: ItemId(1),
+            source: DownloadSource::TorrentFile { path: dir.path().join("unused.torrent") },
+            options: Options { seed_ratio_limit: None, ..Default::default() },
+            tools: ToolSnapshot::default(),
+            files: vec![],
+            resuming: false,
+            torrent: None,
+        };
+        let (result, phases) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(monitor(&session, &handle, &request, &mut ctx, Duration::from_millis(10)), async {
+                let mut phases = Vec::new();
+                let mut samples = 0;
+                while let Some((_, _, event)) = receiver.recv().await {
+                    match event {
+                        JobEvent::Phase(status, detail) => phases.push((status, detail)),
+                        JobEvent::Transfer(_) => {
+                            samples += 1;
+                            if samples == 4 {
+                                stop.stop();
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                phases
+            })
+        })
+        .await
+        .unwrap();
+        session.stop().await;
+        seed.stop().await;
+        assert_eq!(result, Err(JobError::Stopped));
+        assert_eq!(phases, vec![(Status::Pulling, Some("Checking".into())), (Status::Pulling, None)]);
     }
 }

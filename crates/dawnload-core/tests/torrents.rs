@@ -265,3 +265,92 @@ async fn torrent_url_and_seeding_releases_the_real_lane_slot() {
     server.await.unwrap();
     swarm.seeder.stop().await;
 }
+
+/// Tiny, tracker-free, generated torrent. One zero byte; arbitrary metadata path components.
+fn crafted_torrent(parts: &[&str], single_file: bool) -> Vec<u8> {
+    fn string(bytes: &mut Vec<u8>, value: &str) {
+        bytes.extend_from_slice(format!("{}:", value.len()).as_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+    }
+    let mut bytes = b"d4:infod".to_vec();
+    if single_file {
+        bytes.extend_from_slice(b"6:lengthi1e4:name");
+        string(&mut bytes, parts[0]);
+    } else {
+        bytes.extend_from_slice(b"5:filesld6:lengthi1e4:pathl");
+        for part in parts {
+            string(&mut bytes, part);
+        }
+        bytes.extend_from_slice(b"eee4:name7:fixture");
+    }
+    bytes.extend_from_slice(b"12:piece lengthi16384e6:pieces20:");
+    bytes.extend(hex::decode("5ba93c9db0cff93f52b521d7420e43f6eda2784f").unwrap());
+    bytes.extend_from_slice(b"ee");
+    bytes
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unsafe_metadata_paths_are_rejected_before_files_or_payload_are_created() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = CoreConfig::new(dir.path().join("state"));
+    config.check_tools = false;
+    config.torrent_network.offline = true;
+    let core = Core::start(config).unwrap();
+    let mut accepted = Vec::new();
+    let names =
+        ["C:", "C:escape.bin", "media:stream", "CON", "nul.txt", "LPT1.log", "COM¹", "trail.", "trail ", ".", "bad\0name"];
+    for (index, name) in names.iter().enumerate() {
+        for single in [false, true] {
+            let path = dir.path().join(format!("{index}-{single}.torrent"));
+            let parts = if single { vec![*name] } else { vec![*name, "payload.bin"] };
+            std::fs::write(&path, crafted_torrent(&parts, single)).unwrap();
+            let destination = dir.path().join(format!("output-{index}-{single}"));
+            let id = core
+                .add(
+                    path.to_str().unwrap(),
+                    Some(Options { destination: destination.clone(), seed_ratio_limit: None, ..Default::default() }),
+                    true,
+                )
+                .await
+                .unwrap();
+            let item = tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    let item = core.detail(id).await.unwrap().item;
+                    if item.status == Status::Failed || !item.files.is_empty() {
+                        break item;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            if item.status != Status::Failed || !item.files.is_empty() || destination.exists() {
+                accepted.push(format!("{name:?} (single={single})"));
+            }
+            core.act(Action::Remove { ids: vec![id] }).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while core.detail(id).await.is_some() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+    }
+    core.shutdown().await;
+    assert!(accepted.is_empty(), "unsafe metadata reached Files or filesystem storage: {accepted:?}");
+}
+
+/// An actual Windows path-semantics probe: upstream accepts the drive component, and its
+/// conversion followed by the destination join discards the chosen download directory.
+/// It never opens a file. The rejection test above exercises Dawnload's protective boundary.
+#[cfg(windows)]
+#[test]
+fn upstream_drive_component_can_replace_the_windows_destination() {
+    let bytes = crafted_torrent(&["C:", "payload.bin"], false);
+    let parsed = librqbit::torrent_from_bytes(&bytes).unwrap();
+    let info = parsed.info.data.clone().validate().unwrap();
+    let relative = info.iter_file_details().next().unwrap().filename.to_pathbuf();
+    let destination = std::path::PathBuf::from(r"C:\Dawnload\chosen-folder");
+    assert!(!destination.join(relative).starts_with(&destination));
+}

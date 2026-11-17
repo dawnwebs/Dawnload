@@ -120,8 +120,11 @@ upload accounting, courtesy mode, automatic cap and seeding restart are M2 work.
 On this Mac (MacBookPro18,1, ARM64, 16 GiB; rustc 1.98.0): all 83 workspace tests and clippy
 passed, including five offline generated-data swarm cases covering every M1 lifecycle scenario,
 metadata URLs, removing/re-adding a hash and corrupt cache recovery. `cargo deny check licenses`
-passed. No VM was started. The public Ubuntu ISO exit test passed below. Five-runner CI
-is still pending acceptance; its results must be recorded before calling M1 complete.
+passed. No VM was started. The public Ubuntu ISO exit test passed below. All six checks passed on `bfea393` in
+[run 44089677353](https://github.com/dawnwebs/Dawnload/actions/runs/44089677353): Ubuntu 24.04
+x64/ARM, Windows x64/ARM, macOS ARM and the licence gate. Build-time and size data are in
+[phase-4-m1-ci-bfea393.json](../measurements/phase-4-m1-ci-bfea393.json). Subsequent review
+fixes require a new green run; the earlier result does not establish their acceptance.
 
 Release core memory probe (`cargo build --release -p dawnload-core --example torrent_memory`):
 a separate seeder process, five 4 MiB generated files, loopback, 16 KiB/s per download; 8 s
@@ -161,3 +164,21 @@ Session on loopback then requested pieces from Dawnload: Dawnload reported 11,06
 uploaded and the peer verified 9,605,120 bytes before stopping. This proves upload behavior,
 not public-swarm demand or qBittorrent/Transmission interop. The CLI stopped cleanly afterwards.
 The torrent/checksum URLs, info hash and results are in the raw measurement JSON linked above.
+
+### M1 review follow-up
+
+Claude's review exposed a missing portable-name guard at the metadata/storage boundary and
+repeated Pulling phase events. M1 now rejects unsafe decoded torrent path components before
+Files or payload storage (ADR [0013](0013-portable-torrent-file-names.md)); the generated
+22-case regression failed on the prior code and passes after the fix. A Windows-only upstream
+path-conversion probe opens no file and is included for both Windows runners. Phase changes
+now compare status and detail; a real no-peer monitor test reproduced and guards the old noise.
+All 86 local tests, fmt, clippy and licence checks pass after these fixes; native Windows proof
+and all six checks on the changed head remain pending. No VM was started.
+
+Cumulative upload accounting remains M2, with pause/restart and near-limit acceptance tests now
+explicit. Waiting choosers releasing/reacquiring lane capacity remain M3, with scheduler tests
+explicit. The upstream track now includes provider-neutral rustls so Dawnload can use ring
+without AWS-LC; the required published 9.1 feature set is unchanged. The measured size growth
+includes the BitTorrent stack and cannot all be attributed to the extra provider without a
+controlled comparison. See the [review disposition](../reviews/phase-4-m1-claude-review.md).

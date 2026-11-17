@@ -110,7 +110,11 @@ BLOBs and persisted selections; fast resume and recovery without librqbit's cach
 still gates real torrents until M3. All 83 local tests pass, including five real loopback swarm
 tests. The licence gate passes locally. The full public Ubuntu ISO download matches Canonical's SHA-256, survives stop/relaunch and
 uploads verified pieces to a separate local peer. Public peers requested no uploads during the
-observation. Cross-platform CI remains the M1 acceptance gate.
+observation. All six checks passed on `bfea393` across the five runners and licence gate.
+Claude's review then added portable filename validation and phase-event deduplication, covered
+by failing-then-passing regressions; 86 tests pass locally. The changed head must pass CI,
+including its Windows path probe, before M1 is ready. Review disposition and milestone follow-ups:
+[phase-4-m1-claude-review.md](reviews/phase-4-m1-claude-review.md).
 
 The release core probe on this Mac measured 8.94 MiB mean RSS with no torrents and 12.65 MiB
 with five throttled loopback downloads (seeder in a separate process). These are core-only,

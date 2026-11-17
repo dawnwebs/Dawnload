@@ -71,5 +71,25 @@
       "uploaded_bytes": 11063296
     },
     "note": "Public swarm download, deliberate stop/fast-resume on final release binary, then full official SHA-256 verification. Public peers requested no uploads during 120 s. Upload behavior verified with a separate loopback librqbit 9.1 peer. No VM or qBittorrent/Transmission interop claimed."
+  },
+  "measurement_stage": "Initial M1 integration, before the Claude-review path and phase fixes; these are not new measurements of those changes.",
+  "review_release_build": {
+    "os": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "release_build_seconds": 122.94,
+    "binary_bytes": {
+      "dawnload": 19796656,
+      "dawnload-app": 43381728
+    },
+    "note": "Release step wall time; preceding debug checks and restored caches affect it."
+  },
+  "review_public_upload": {
+    "torrent": "ubuntu-24.04.3-live-server-amd64.iso",
+    "source": "Dawnload final release CLI, public Ubuntu torrent fully downloaded and SHA-256 verified",
+    "peer": "separate librqbit Session on loopback; no DHT, trackers or LSD",
+    "leecher_verified_pieces": "VERIFIED_PIECES bytes=9342976",
+    "dawnload_status": "seeding",
+    "uploaded_bytes": 11309056,
+    "note": "Review-fix release CLI resumed the already fully downloaded, official-SHA-256-verified ISO from SQLite/fast resume; this was not a fresh full download."
   }
 }
