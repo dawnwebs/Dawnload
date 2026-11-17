@@ -10,7 +10,7 @@ milestone closes). One pull request per milestone.
 
 ## M1 · The engine works (core only)
 
-Implementation status (2026-11-17): built and locally tested; CI, release size report and the
+Implementation status (2026-11-17): built, locally tested and measured; five-runner CI and the
 public Ubuntu ISO exit test are pending. M2 has not started. Measurements and remaining gates
 are in ADR 0011's Consequences. This milestone is not marked done until those gates pass.
 

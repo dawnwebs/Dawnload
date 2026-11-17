@@ -114,7 +114,9 @@ remain acceptance gates, not completed claims.
 The release core probe on this Mac measured 8.94 MiB mean RSS with no torrents and 12.65 MiB
 with five throttled loopback downloads (seeder in a separate process). These are core-only,
 small-fixture measurements; the complete desktop and VM memory budgets remain open.
-CI now records release build wall time and binary bytes on every runner.
+The final-source CLI is 19,794,656 bytes and the desktop is 43,364,016 bytes on this Mac
+(about +9.6 MB each). The empty desktop measured 102 MiB physical footprint.
+CI records release build wall time and binary bytes on every runner.
 
 - **M2:** ratio/time policies, courtesy mode, automatic upload cap and seeding across restart.
 - **M3:** the real chooser, smart selection, sharing note, Settings and OS handlers.

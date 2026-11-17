@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths: ["crates/**", ".cargo/**", "Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/rust.yml"]
+  # Every milestone update, including its acceptance evidence, gets checks on its own SHA.
   pull_request:
-    paths: ["crates/**", ".cargo/**", "Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/rust.yml"]
 
 env:
   CARGO_TERM_COLOR: always

@@ -135,10 +135,18 @@ These small-fixture core results do not establish the full UI's ~100 MB/+40 MB V
 expectation above); the requested feature set is unchanged. M1 CI publishes release build
 seconds and uncompressed binary sizes in its job summaries and artifacts. The pre-M1 release
 baseline on this Mac is 10,188,672 bytes for the CLI and 33,783,488 bytes for the desktop;
-first build from an empty target directory took 194 seconds. The first integration build measured
-19,778,672 bytes for the CLI and 43,364,592 bytes for the desktop (+9,590,000 and +9,581,104
-bytes); its release step took 325.72 s with prebuilt debug dependencies. Those times are not a
-controlled before/after benchmark. A rebuild of the final source and CI measurements are pending.
+first build from an empty target directory took 194 seconds. Final-source release sizes:
+19,794,656 bytes for the CLI (+9,605,984) and 43,364,016 bytes for the desktop (+9,580,528).
+The incremental final release step took 154.10 s; the initial integration step took 325.72 s.
+These times use different caches and are not a controlled performance comparison. CI records
+its own build timing on every runner.
+
+The desktop's empty-list release run on this Mac measured mean RSS 84.75 MiB, peak 107.78 MiB
+and physical footprint 102.0 MiB (same 8 s warm-up/20-sample method). Five real desktop torrents
+remain gated until M3, so the core-only figure above must not be added to this footprint and
+presented as a measured five-torrent desktop result. Raw local results are in
+[phase-4-m1-macos.json](../measurements/phase-4-m1-macos.json).
+
 
 Open: M2–M5, Windows/Ubuntu ARM VM acceptance, qBittorrent/Transmission interop, production
 swarm memory/CPU, and both upstream contributions. Protocol encryption and v2 remain unsupported.

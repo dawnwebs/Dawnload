@@ -1,0 +1,50 @@
+{
+  "process": "release core probe; seeder separate; loopback; five 4 MiB fixtures at 16 KiB/s each",
+  "measurements": [
+    {
+      "active_torrents": 0,
+      "rss_mean_mib": 8.94,
+      "rss_peak_mib": 8.95,
+      "physical_footprint_mib": 3.828125,
+      "samples": 20,
+      "warmup_seconds": 8
+    },
+    {
+      "active_torrents": 5,
+      "rss_mean_mib": 12.65,
+      "rss_peak_mib": 13.25,
+      "physical_footprint_mib": 7.4384765625,
+      "samples": 20,
+      "warmup_seconds": 8
+    }
+  ],
+  "seeder": "Separate process, excluded from measurements",
+  "desktop_empty": {
+    "scenario": "release desktop, empty fresh data folder, no torrents",
+    "rss_mean_mib": 84.75,
+    "rss_peak_mib": 107.78,
+    "physical_footprint_mib": 102.0,
+    "warmup_seconds": 8,
+    "samples": 20
+  },
+  "release_build": {
+    "os": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "release_build_seconds": 154.1,
+    "binary_bytes": {
+      "dawnload": 19794656,
+      "dawnload-app": 43364016
+    },
+    "note": "Release step wall time; preceding debug checks and restored caches affect it."
+  },
+  "baseline_binary_bytes": {
+    "dawnload": 10188672,
+    "dawnload-app": 33783488
+  },
+  "machine": {
+    "hardware": "MacBookPro18,1",
+    "memory_gib": 16,
+    "rustc": "1.98.0",
+    "date": "2026-11-17"
+  }
+}
