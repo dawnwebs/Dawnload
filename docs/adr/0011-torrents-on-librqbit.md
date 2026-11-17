@@ -120,8 +120,8 @@ upload accounting, courtesy mode, automatic cap and seeding restart are M2 work.
 On this Mac (MacBookPro18,1, ARM64, 16 GiB; rustc 1.98.0): all 83 workspace tests and clippy
 passed, including five offline generated-data swarm cases covering every M1 lifecycle scenario,
 metadata URLs, removing/re-adding a hash and corrupt cache recovery. `cargo deny check licenses`
-passed. No VM was started. The five-runner CI and a public Ubuntu ISO download/seed are still
-pending acceptance; their results must be recorded before calling M1 complete.
+passed. No VM was started. The public Ubuntu ISO exit test passed below. Five-runner CI
+is still pending acceptance; its results must be recorded before calling M1 complete.
 
 Release core memory probe (`cargo build --release -p dawnload-core --example torrent_memory`):
 a separate seeder process, five 4 MiB generated files, loopback, 16 KiB/s per download; 8 s
@@ -150,3 +150,14 @@ presented as a measured five-torrent desktop result. Raw local results are in
 
 Open: M2–M5, Windows/Ubuntu ARM VM acceptance, qBittorrent/Transmission interop, production
 swarm memory/CPU, and both upstream contributions. Protocol encryption and v2 remain unsupported.
+
+Public Ubuntu exit test on this Mac: `dawnload get <magnet> --to <temporary folder>` downloaded
+all 3,303,444,480 bytes of Ubuntu 24.04.3 live-server amd64 from the public swarm. A deliberate
+stop/relaunch continued from fast resume with the final release CLI. The finished ISO's SHA-256
+was `c3514bf0056180d09376462a7a1b4f213c1d6e8ea67fae5c25099c6fd3d8274b`, matching
+[Canonical's published checksums](https://releases.ubuntu.com/24.04.3/SHA256SUMS).
+It reached Seeding; public peers requested no upload during 120 s. A separate librqbit 9.1
+Session on loopback then requested pieces from Dawnload: Dawnload reported 11,063,296 bytes
+uploaded and the peer verified 9,605,120 bytes before stopping. This proves upload behavior,
+not public-swarm demand or qBittorrent/Transmission interop. The CLI stopped cleanly afterwards.
+The torrent/checksum URLs, info hash and results are in the raw measurement JSON linked above.

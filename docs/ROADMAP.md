@@ -108,8 +108,9 @@ magnets, `.torrent` files and HTTP metadata links; Checking, file progress and s
 ratio-limit completion and Stop Seeding; `Action::SelectFiles` while running; SQLite metadata
 BLOBs and persisted selections; fast resume and recovery without librqbit's cache. The desktop
 still gates real torrents until M3. All 83 local tests pass, including five real loopback swarm
-tests. The licence gate passes locally. Cross-platform CI and the public Ubuntu ISO exit test
-remain acceptance gates, not completed claims.
+tests. The licence gate passes locally. The full public Ubuntu ISO download matches Canonical's SHA-256, survives stop/relaunch and
+uploads verified pieces to a separate local peer. Public peers requested no uploads during the
+observation. Cross-platform CI remains the M1 acceptance gate.
 
 The release core probe on this Mac measured 8.94 MiB mean RSS with no torrents and 12.65 MiB
 with five throttled loopback downloads (seeder in a separate process). These are core-only,

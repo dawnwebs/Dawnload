@@ -10,8 +10,8 @@ milestone closes). One pull request per milestone.
 
 ## M1 · The engine works (core only)
 
-Implementation status (2026-11-17): built, locally tested and measured; five-runner CI and the
-public Ubuntu ISO exit test are pending. M2 has not started. Measurements and remaining gates
+Implementation status (2026-11-17): built, locally tested and measured; the public Ubuntu ISO download,
+checksum, stop/relaunch and upload verification passed on this Mac. Five-runner CI is pending. M2 has not started. Measurements and remaining gates
 are in ADR 0011's Consequences. This milestone is not marked done until those gates pass.
 
 - Add `librqbit = { version = "9.1", default-features = false, features = ["rust-tls"] }`; check

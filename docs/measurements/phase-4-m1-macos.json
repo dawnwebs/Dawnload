@@ -46,5 +46,30 @@
     "memory_gib": 16,
     "rustc": "1.98.0",
     "date": "2026-11-17"
+  },
+  "public_ubuntu": {
+    "torrent_url": "https://releases.ubuntu.com/24.04.3/ubuntu-24.04.3-live-server-amd64.iso.torrent",
+    "checksums_url": "https://releases.ubuntu.com/24.04.3/SHA256SUMS",
+    "info_hash": "a1dfefec1a9dd7fa8a041ebeeea271db55126d2f",
+    "download": {
+      "elapsed_seconds_after_resume": 322,
+      "status": "seeding",
+      "bytes_done": 3303444480,
+      "bytes_total": 3303444480,
+      "uploaded": 0,
+      "failure": null,
+      "cli_returncode_before_stop": null,
+      "sha256": "c3514bf0056180d09376462a7a1b4f213c1d6e8ea67fae5c25099c6fd3d8274b",
+      "matches_official_sha256": true
+    },
+    "upload_verification": {
+      "torrent": "ubuntu-24.04.3-live-server-amd64.iso",
+      "source": "Dawnload final release CLI, public Ubuntu torrent fully downloaded and SHA-256 verified",
+      "peer": "separate librqbit Session on loopback; no DHT, trackers or LSD",
+      "leecher_verified_pieces": "VERIFIED_PIECES bytes=9605120",
+      "dawnload_status": "seeding",
+      "uploaded_bytes": 11063296
+    },
+    "note": "Public swarm download, deliberate stop/fast-resume on final release binary, then full official SHA-256 verification. Public peers requested no uploads during 120 s. Upload behavior verified with a separate loopback librqbit 9.1 peer. No VM or qBittorrent/Transmission interop claimed."
   }
 }
