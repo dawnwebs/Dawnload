@@ -1,0 +1,65 @@
+{
+  "head": "d82bad76f4a5c33f23648e898f68d2589ab0a625",
+  "run": "https://github.com/dawnwebs/Dawnload/actions/runs/44095865946",
+  "all_six_checks": "success",
+  "windows_native_escape_probe": "passed on windows-latest and windows-11-arm; non-writing path conversion probe",
+  "guarded_unsafe_metadata_regression": "passed on all five runners",
+  "note": "Validated M1 source including review fixes. Release step timings depend on runner and cache. Final PR-head checks are linked from PR #4.",
+  "runners": [
+    {
+      "runner": "ubuntu-24.04",
+      "os": "Linux-7.0.0-1014-aws-x86_64-with-glibc2.39",
+      "architecture": "x86_64",
+      "release_build_seconds": 134.7,
+      "binary_bytes": {
+        "dawnload": 23802016,
+        "dawnload-app": 61707296
+      },
+      "workspace_tests_passed": 86
+    },
+    {
+      "runner": "ubuntu-24.04-arm",
+      "os": "Linux-7.0.0-1017-azure-aarch64-with-glibc2.39",
+      "architecture": "aarch64",
+      "release_build_seconds": 298.33,
+      "binary_bytes": {
+        "dawnload": 22523640,
+        "dawnload-app": 59626416
+      },
+      "workspace_tests_passed": 86
+    },
+    {
+      "runner": "windows-latest",
+      "os": "Windows-2025Server-10.0.26100-SP0",
+      "architecture": "AMD64",
+      "release_build_seconds": 309.42,
+      "binary_bytes": {
+        "dawnload": 18664448,
+        "dawnload-app": 40464896
+      },
+      "workspace_tests_passed": 84
+    },
+    {
+      "runner": "windows-11-arm",
+      "os": "Windows-11-10.0.26200-SP0",
+      "architecture": "ARM64",
+      "release_build_seconds": 177.05,
+      "binary_bytes": {
+        "dawnload": 16656896,
+        "dawnload-app": 36258304
+      },
+      "workspace_tests_passed": 84
+    },
+    {
+      "runner": "macos-latest",
+      "os": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "architecture": "arm64",
+      "release_build_seconds": 240.43,
+      "binary_bytes": {
+        "dawnload": 19942768,
+        "dawnload-app": 43799712
+      },
+      "workspace_tests_passed": 86
+    }
+  ]
+}

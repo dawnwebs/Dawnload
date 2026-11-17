@@ -1,8 +1,7 @@
 # Phase 4 plan: torrents on librqbit
 
 Decisions: [ADR 0011](../adr/0011-torrents-on-librqbit.md). Lifecycle contract: [ADR 0003](../adr/0003-seeding-inside-the-job.md).
-Seam today: `crates/dawnload-core/src/engine/torrent.rs` (accepts magnets and `.torrent`,
-reports "not built yet").
+Engine: `crates/dawnload-core/src/engine/torrent.rs`, backed by the core-owned `TorrentService`.
 
 Each milestone leaves `main` shippable: CI green on all five runners, the app usable, nothing
 half-wired visible to people (unfinished UI stays behind `--demo` or a Settings flag until its
@@ -10,11 +9,13 @@ milestone closes). One pull request per milestone.
 
 ## M1 · The engine works (core only)
 
-Implementation status (2026-11-17): built, locally tested and measured; the public Ubuntu ISO download,
-checksum, stop/relaunch and upload verification passed on this Mac. All six checks passed on
-`bfea393`. Review fixes for portable torrent names and repeated phase events now require a new
-green run, including a native Windows path probe. M2 has not started. Measurements and remaining
-gates are in ADR 0011's Consequences. This milestone is not marked done until those gates pass.
+Implementation status (2026-11-17): built and validated, PR #4 awaiting owner review/merge.
+The public Ubuntu ISO download, official checksum, stop/relaunch and upload verification passed
+on this Mac. Review fixes for portable names and phase events pass all 86 local tests. All six
+checks passed on `d82bad7`, including the native path probe on both Windows runners:
+[run 44095865946](https://github.com/dawnwebs/Dawnload/actions/runs/44095865946). Final PR-head
+checks must remain green before merge. M2 has not started; the next milestone needs M1 on main.
+Measurements and remaining Phase 4 gates are in ADR 0011's Consequences.
 
 - Add `librqbit = { version = "9.1", default-features = false, features = ["rust-tls"] }`; check
   `cargo deny`, binary size and build time on the five runners.

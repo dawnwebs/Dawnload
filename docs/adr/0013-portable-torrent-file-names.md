@@ -38,7 +38,9 @@ installations; portable rejection gives consistent behavior. Sanitizing names ri
   M1 code all 22 reached Files/storage; after validation they fail before either boundary.
 - A Windows-only test parses a crafted `C:` torrent through upstream validation and proves
   its converted path does not stay under the chosen destination. It opens no file. Both
-  Windows CI runners must pass this probe and the guarded rejection test before M1 is ready.
+  Windows CI runners passed this probe and the guarded rejection test on `d82bad7` in
+  [run 44095865946](https://github.com/dawnwebs/Dawnload/actions/runs/44095865946). This confirms
+  native path conversion and the rejection boundary; the probe does not attempt an escaped write.
 - The path rules can reject POSIX-valid names that cannot safely travel to Windows. This is a
   deliberate cross-platform constraint; it does not claim all filesystem aliasing is solved.
 - Sources: [Rust PathBuf::push](https://doc.rust-lang.org/std/path/struct.PathBuf.html#method.push),

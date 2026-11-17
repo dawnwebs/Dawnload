@@ -1,6 +1,6 @@
 # 0011 · Torrents on librqbit: one session, courteous seeding, safe by default
 
-Status: Accepted (2026-11-17); M1 implementation in progress, M2–M5 planned. Supersedes ADR 0003's last bullet (an
+Status: Accepted (2026-11-17); M1 built and validated; owner merge pending. M2–M5 planned. Supersedes ADR 0003's last bullet (an
 item seeding at quit now resumes seeding at launch, below). The build plan is
 [plans/phase-4-torrents.md](../plans/phase-4-torrents.md).
 
@@ -100,85 +100,35 @@ librqbit 9.1.0 (2026-10-29), read from source for this record:
 
 ## Consequences
 
-- No protocol encryption: some ISPs throttle unencrypted BitTorrent. Settings says so; if it
-  proves common, MSE/PE is the next upstream contribution (or the reason to revisit libtorrent).
-- No BitTorrent v2-only torrents. Hybrid torrents work through their v1 half.
-- Memory: the ~100 MB idle target holds with no torrents; with five active torrents the budget
-  is +40 MB, measured in the VMs before phase 4 is called done.
-- The CI swarm test (a seeder session and Dawnload's session joined through `initial_peers`,
-  no network) makes torrent behaviour testable on all five runners.
-- ADR 0003's quit rule changes for seeding only: downloads still come back Paused.
-
-### M1 implementation and evidence (2026-11-17)
-
-Implemented in the core and CLI; desktop torrent intake stays disabled until M3. See
-[0012](0012-torrent-state-is-a-cache.md) for the cache/SQLite boundary, duplicate-hash ownership
-and destination rules. Metadata URLs use the same pooled HTTP client as direct downloads.
-Seeding ends at the existing per-item ratio limit or Stop Seeding; the 7-day limit, cumulative
-upload accounting, courtesy mode, automatic cap and seeding restart are M2 work. No search added.
-
-On this Mac (MacBookPro18,1, ARM64, 16 GiB; rustc 1.98.0): all 83 workspace tests and clippy
-passed, including five offline generated-data swarm cases covering every M1 lifecycle scenario,
-metadata URLs, removing/re-adding a hash and corrupt cache recovery. `cargo deny check licenses`
-passed. No VM was started. The public Ubuntu ISO exit test passed below. All six checks passed on `bfea393` in
-[run 44089677353](https://github.com/dawnwebs/Dawnload/actions/runs/44089677353): Ubuntu 24.04
-x64/ARM, Windows x64/ARM, macOS ARM and the licence gate. Build-time and size data are in
-[phase-4-m1-ci-bfea393.json](../measurements/phase-4-m1-ci-bfea393.json). Subsequent review
-fixes require a new green run; the earlier result does not establish their acceptance.
-
-Release core memory probe (`cargo build --release -p dawnload-core --example torrent_memory`):
-a separate seeder process, five 4 MiB generated files, loopback, 16 KiB/s per download; 8 s
-warm-up then 20 RSS samples one second apart. Zero torrents: mean RSS 8.94 MiB, peak 8.95 MiB,
-physical footprint 3.83 MiB. Five active: mean RSS 12.65 MiB, peak 13.25 MiB, physical footprint
-7.44 MiB. Reproduce with `torrent_memory seed DIR`, then `torrent_memory probe DIR 0` or `5`;
-measure the probe PID after READY and send Ctrl-C for clean shutdown. The seeder is excluded.
-These small-fixture core results do not establish the full UI's ~100 MB/+40 MB VM budget.
-
-`rust-tls` pulls in AWS-LC through reqwest 0.13 in addition to ring (contrary to the initial
-expectation above); the requested feature set is unchanged. M1 CI publishes release build
-seconds and uncompressed binary sizes in its job summaries and artifacts. The pre-M1 release
-baseline on this Mac is 10,188,672 bytes for the CLI and 33,783,488 bytes for the desktop;
-first build from an empty target directory took 194 seconds. Final-source release sizes:
-19,794,656 bytes for the CLI (+9,605,984) and 43,364,016 bytes for the desktop (+9,580,528).
-The incremental final release step took 154.10 s; the initial integration step took 325.72 s.
-These times use different caches and are not a controlled performance comparison. CI records
-its own build timing on every runner.
-
-The desktop's empty-list release run on this Mac measured mean RSS 84.75 MiB, peak 107.78 MiB
-and physical footprint 102.0 MiB (same 8 s warm-up/20-sample method). Five real desktop torrents
-remain gated until M3, so the core-only figure above must not be added to this footprint and
-presented as a measured five-torrent desktop result. Raw local results are in
-[phase-4-m1-macos.json](../measurements/phase-4-m1-macos.json).
-
-
-Open: M2–M5, Windows/Ubuntu ARM VM acceptance, qBittorrent/Transmission interop, production
-swarm memory/CPU, and both upstream contributions. Protocol encryption and v2 remain unsupported.
-
-Public Ubuntu exit test on this Mac: `dawnload get <magnet> --to <temporary folder>` downloaded
-all 3,303,444,480 bytes of Ubuntu 24.04.3 live-server amd64 from the public swarm. A deliberate
-stop/relaunch continued from fast resume with the final release CLI. The finished ISO's SHA-256
-was `c3514bf0056180d09376462a7a1b4f213c1d6e8ea67fae5c25099c6fd3d8274b`, matching
-[Canonical's published checksums](https://releases.ubuntu.com/24.04.3/SHA256SUMS).
-It reached Seeding; public peers requested no upload during 120 s. A separate librqbit 9.1
-Session on loopback then requested pieces from Dawnload: Dawnload reported 11,063,296 bytes
-uploaded and the peer verified 9,605,120 bytes before stopping. This proves upload behavior,
-not public-swarm demand or qBittorrent/Transmission interop. The CLI stopped cleanly afterwards.
-The torrent/checksum URLs, info hash and results are in the raw measurement JSON linked above.
-
-### M1 review follow-up
-
-Claude's review exposed a missing portable-name guard at the metadata/storage boundary and
-repeated Pulling phase events. M1 now rejects unsafe decoded torrent path components before
-Files or payload storage (ADR [0013](0013-portable-torrent-file-names.md)); the generated
-22-case regression failed on the prior code and passes after the fix. A Windows-only upstream
-path-conversion probe opens no file and is included for both Windows runners. Phase changes
-now compare status and detail; a real no-peer monitor test reproduced and guards the old noise.
-All 86 local tests, fmt, clippy and licence checks pass after these fixes; native Windows proof
-and all six checks on the changed head remain pending. No VM was started.
-
-Cumulative upload accounting remains M2, with pause/restart and near-limit acceptance tests now
-explicit. Waiting choosers releasing/reacquiring lane capacity remain M3, with scheduler tests
-explicit. The upstream track now includes provider-neutral rustls so Dawnload can use ring
-without AWS-LC; the required published 9.1 feature set is unchanged. The measured size growth
-includes the BitTorrent stack and cannot all be attributed to the extra provider without a
-controlled comparison. See the [review disposition](../reviews/phase-4-m1-claude-review.md).
+- No protocol encryption; throttling may warrant an upstream MSE/PE contribution or revisiting
+  libtorrent. No BitTorrent v2-only support; hybrid torrents use their v1 half.
+- **M1 built and validated (2026-11-17), PR #4 awaits owner review/merge:** one lazy Session,
+  SQLite metadata/selection, live selection, Checking, swarm stats, fast resume/cache recovery,
+  ratio completion and Stop Seeding. The desktop remains gated until M3. See
+  [0012](0012-torrent-state-is-a-cache.md) for ownership/cache decisions.
+- **Tests:** 86 local tests, fmt, clippy and cargo-deny pass on this ARM64 Mac; no VM used.
+  All six checks passed on `d82bad7` in [run 44095865946](https://github.com/dawnwebs/Dawnload/actions/runs/44095865946):
+  Ubuntu 24.04 x64/ARM, Windows x64/ARM, macOS and licences. Offline swarms cover the M1 lifecycle.
+  Both Windows runners confirmed upstream drive-prefix escape semantics and the guarded
+  rejection test (non-writing probe, [0013](0013-portable-torrent-file-names.md)). Phase-event
+  deduplication has a real-engine regression. Final PR-head checks must remain green for merge.
+- **Public exit:** the complete Ubuntu 24.04.3 server ISO matches
+  [Canonical's SHA-256](https://releases.ubuntu.com/24.04.3/SHA256SUMS), resumes after quit, and
+  seeds verified pieces to a separate local peer. Public peers requested no uploads during
+  observation; qBittorrent/Transmission interop is not established. The review-fix CLI repeated
+  resume/upload successfully. Exact hashes, bytes, methods and limits are in
+  [local measurements](../measurements/phase-4-m1-macos.json).
+- **Memory:** pre-review integration core mean RSS: 8.94 MiB with no torrents; 12.65 MiB with
+  five throttled loopback downloads, excluding the separate seeder (8 s warm-up, 20 samples).
+  Empty desktop physical footprint: 102 MiB. These do not establish the five-torrent desktop
+  or VM ~100 MB/+40 MB budget; they are not new measurements of the review fixes.
+- **Build impact:** local review-fix CLI 19,796,656 bytes; desktop 43,381,728 bytes, about
+  +9.6 MB each over pre-M1. The required `rust-tls` feature also selects AWS-LC via reqwest 0.13,
+  alongside ring. The full increase cannot all be attributed to crypto without a controlled
+  comparison. [Five-runner measurements](../measurements/phase-4-m1-ci-d82bad7.json) record
+  sizes and release-step times; cache/runner differences prevent controlled timing comparisons.
+- **Open:** M2 cumulative upload accounting, time limits, courtesy/cap controls and seeding
+  restart (downloads still return Paused); M3 UI/chooser scheduling; M4 safety; M5 playback;
+  both VM acceptance runs, interop and production memory/CPU. Upstream rarest-first, live rate
+  limits and provider-neutral rustls remain queued. No fork. See the
+  [review disposition](../reviews/phase-4-m1-claude-review.md) and [plan](../plans/phase-4-torrents.md).
