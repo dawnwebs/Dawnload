@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::model::{Item, ItemId};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const LOG_LINES_KEPT: i64 = 400;
 
 #[derive(Debug)]
@@ -37,6 +37,10 @@ pub enum StoreOp {
         position: i64,
     },
     Delete(ItemId),
+    Torrent {
+        id: ItemId,
+        record: crate::engine::torrent::TorrentRecord,
+    },
     /// The whole queue order.
     Order(Vec<ItemId>),
     Log {
@@ -99,6 +103,18 @@ impl Store {
                  COMMIT;",
             )?;
         }
+        if version < 2 {
+            conn.execute_batch(
+                "BEGIN;
+                 CREATE TABLE torrents (
+                     item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+                     info_hash TEXT NOT NULL,
+                     metadata BLOB NOT NULL
+                 );
+                 PRAGMA user_version = 2;
+                 COMMIT;",
+            )?;
+        }
         Ok(Store { conn })
     }
 
@@ -108,6 +124,15 @@ impl Store {
         let mut stmt = self.conn.prepare("SELECT data FROM items ORDER BY position, id")?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
         Ok(rows.filter_map(|r| r.ok()).filter_map(|json| serde_json::from_str(&json).ok()).collect())
+    }
+
+    pub fn torrent(&self, id: ItemId) -> Result<Option<crate::engine::torrent::TorrentRecord>, StoreError> {
+        Ok(self
+            .conn
+            .query_row("SELECT info_hash, metadata FROM torrents WHERE item_id = ?1", [id.0 as i64], |r| {
+                Ok(crate::engine::torrent::TorrentRecord { info_hash: r.get(0)?, metadata: r.get(1)? })
+            })
+            .optional()?)
     }
 
     pub fn load_log(&self, id: ItemId) -> Result<Vec<String>, StoreError> {
@@ -139,6 +164,13 @@ impl Store {
                     StoreOp::Upsert { item, position } => {
                         let json = serde_json::to_string(item).map_err(|e| StoreError(e.to_string()))?;
                         upsert.execute(params![item.id.0 as i64, position, item.status.as_str(), json, now])?;
+                    }
+                    StoreOp::Torrent { id, record } => {
+                        tx.execute(
+                            "INSERT INTO torrents (item_id, info_hash, metadata) VALUES (?1, ?2, ?3)
+                             ON CONFLICT(item_id) DO UPDATE SET info_hash=excluded.info_hash, metadata=excluded.metadata",
+                            params![id.0 as i64, record.info_hash, record.metadata],
+                        )?;
                     }
                     StoreOp::Delete(id) => {
                         tx.execute("DELETE FROM items WHERE id = ?1", [id.0 as i64])?;

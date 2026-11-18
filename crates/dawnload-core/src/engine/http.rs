@@ -835,6 +835,7 @@ mod tests {
             tools: ToolSnapshot::default(),
             files,
             resuming: false,
+            torrent: None,
         }
     }
 

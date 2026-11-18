@@ -1,0 +1,58 @@
+{
+  "head": "bfea393a7e35f069a61e2baa3b0a7e299aa319dd",
+  "run": "https://github.com/dawnwebs/Dawnload/actions/runs/44089677353",
+  "all_six_checks": "success",
+  "note": "Pre-review-fix baseline. Release step timings depend on runner and cache. Review-fix CI must pass separately.",
+  "runners": [
+    {
+      "runner": "ubuntu-24.04",
+      "os": "Linux-7.0.0-1014-aws-x86_64-with-glibc2.39",
+      "architecture": "x86_64",
+      "release_build_seconds": 136.49,
+      "binary_bytes": {
+        "dawnload": 23795016,
+        "dawnload-app": 61698848
+      }
+    },
+    {
+      "runner": "ubuntu-24.04-arm",
+      "os": "Linux-7.0.0-1017-azure-aarch64-with-glibc2.39",
+      "architecture": "aarch64",
+      "release_build_seconds": 132.35,
+      "binary_bytes": {
+        "dawnload": 22518928,
+        "dawnload-app": 59622016
+      }
+    },
+    {
+      "runner": "windows-latest",
+      "os": "Windows-2025Server-10.0.26100-SP0",
+      "architecture": "AMD64",
+      "release_build_seconds": 345.49,
+      "binary_bytes": {
+        "dawnload": 18698752,
+        "dawnload-app": 40492544
+      }
+    },
+    {
+      "runner": "windows-11-arm",
+      "os": "Windows-11-10.0.26200-SP0",
+      "architecture": "ARM64",
+      "release_build_seconds": 366.81,
+      "binary_bytes": {
+        "dawnload": 16688128,
+        "dawnload-app": 36281856
+      }
+    },
+    {
+      "runner": "macos-latest",
+      "os": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "architecture": "arm64",
+      "release_build_seconds": 140.17,
+      "binary_bytes": {
+        "dawnload": 19949696,
+        "dawnload-app": 43806048
+      }
+    }
+  ]
+}

@@ -128,6 +128,7 @@ pub struct JobRequest {
     pub files: Vec<ItemFile>,
     /// What's in the folder already from an earlier run, so a resumed job can continue it.
     pub resuming: bool,
+    pub torrent: Option<torrent::TorrentRecord>,
 }
 
 /// What a running job reports. Cheap to send; the core coalesces them before any UI sees them.
@@ -140,6 +141,7 @@ pub enum JobEvent {
     Title(String),
     Files(Vec<ItemFile>),
     Swarm(Swarm),
+    Torrent(torrent::TorrentRecord),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -171,11 +173,13 @@ pub struct JobContext {
     pub run: u64,
     pub stop: StopSignal,
     sender: mpsc::UnboundedSender<(ItemId, u64, JobEvent)>,
+    pub(crate) torrents: Option<Arc<torrent::TorrentService>>,
+    pub(crate) selection: Option<tokio::sync::watch::Receiver<Vec<usize>>>,
 }
 
 impl JobContext {
     pub fn new(item_id: ItemId, run: u64, stop: StopSignal, sender: mpsc::UnboundedSender<(ItemId, u64, JobEvent)>) -> Self {
-        JobContext { item_id, run, stop, sender }
+        JobContext { item_id, run, stop, sender, torrents: None, selection: None }
     }
 
     pub fn emit(&self, event: JobEvent) {
@@ -218,6 +222,11 @@ impl Registry {
                 Arc::new(demo::DemoEngine::default()),
             ],
         }
+    }
+
+    /// Keep unfinished torrent controls out of the desktop app until M3.
+    pub fn disable_torrents(&mut self) {
+        self.engines.retain(|engine| engine.id() != EngineId::Torrent);
     }
 
     pub fn with(engines: Vec<Arc<dyn DownloadEngine>>) -> Registry {

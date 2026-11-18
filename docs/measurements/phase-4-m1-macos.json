@@ -1,0 +1,95 @@
+{
+  "process": "release core probe; seeder separate; loopback; five 4 MiB fixtures at 16 KiB/s each",
+  "measurements": [
+    {
+      "active_torrents": 0,
+      "rss_mean_mib": 8.94,
+      "rss_peak_mib": 8.95,
+      "physical_footprint_mib": 3.828125,
+      "samples": 20,
+      "warmup_seconds": 8
+    },
+    {
+      "active_torrents": 5,
+      "rss_mean_mib": 12.65,
+      "rss_peak_mib": 13.25,
+      "physical_footprint_mib": 7.4384765625,
+      "samples": 20,
+      "warmup_seconds": 8
+    }
+  ],
+  "seeder": "Separate process, excluded from measurements",
+  "desktop_empty": {
+    "scenario": "release desktop, empty fresh data folder, no torrents",
+    "rss_mean_mib": 84.75,
+    "rss_peak_mib": 107.78,
+    "physical_footprint_mib": 102.0,
+    "warmup_seconds": 8,
+    "samples": 20
+  },
+  "release_build": {
+    "os": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "release_build_seconds": 154.1,
+    "binary_bytes": {
+      "dawnload": 19794656,
+      "dawnload-app": 43364016
+    },
+    "note": "Release step wall time; preceding debug checks and restored caches affect it."
+  },
+  "baseline_binary_bytes": {
+    "dawnload": 10188672,
+    "dawnload-app": 33783488
+  },
+  "machine": {
+    "hardware": "MacBookPro18,1",
+    "memory_gib": 16,
+    "rustc": "1.98.0",
+    "date": "2026-11-17"
+  },
+  "public_ubuntu": {
+    "torrent_url": "https://releases.ubuntu.com/24.04.3/ubuntu-24.04.3-live-server-amd64.iso.torrent",
+    "checksums_url": "https://releases.ubuntu.com/24.04.3/SHA256SUMS",
+    "info_hash": "a1dfefec1a9dd7fa8a041ebeeea271db55126d2f",
+    "download": {
+      "elapsed_seconds_after_resume": 322,
+      "status": "seeding",
+      "bytes_done": 3303444480,
+      "bytes_total": 3303444480,
+      "uploaded": 0,
+      "failure": null,
+      "cli_returncode_before_stop": null,
+      "sha256": "c3514bf0056180d09376462a7a1b4f213c1d6e8ea67fae5c25099c6fd3d8274b",
+      "matches_official_sha256": true
+    },
+    "upload_verification": {
+      "torrent": "ubuntu-24.04.3-live-server-amd64.iso",
+      "source": "Dawnload final release CLI, public Ubuntu torrent fully downloaded and SHA-256 verified",
+      "peer": "separate librqbit Session on loopback; no DHT, trackers or LSD",
+      "leecher_verified_pieces": "VERIFIED_PIECES bytes=9605120",
+      "dawnload_status": "seeding",
+      "uploaded_bytes": 11063296
+    },
+    "note": "Public swarm download, deliberate stop/fast-resume on final release binary, then full official SHA-256 verification. Public peers requested no uploads during 120 s. Upload behavior verified with a separate loopback librqbit 9.1 peer. No VM or qBittorrent/Transmission interop claimed."
+  },
+  "measurement_stage": "Initial M1 integration, before the Claude-review path and phase fixes; these are not new measurements of those changes.",
+  "review_release_build": {
+    "os": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "release_build_seconds": 122.94,
+    "binary_bytes": {
+      "dawnload": 19796656,
+      "dawnload-app": 43381728
+    },
+    "note": "Release step wall time; preceding debug checks and restored caches affect it."
+  },
+  "review_public_upload": {
+    "torrent": "ubuntu-24.04.3-live-server-amd64.iso",
+    "source": "Dawnload final release CLI, public Ubuntu torrent fully downloaded and SHA-256 verified",
+    "peer": "separate librqbit Session on loopback; no DHT, trackers or LSD",
+    "leecher_verified_pieces": "VERIFIED_PIECES bytes=9342976",
+    "dawnload_status": "seeding",
+    "uploaded_bytes": 11309056,
+    "note": "Review-fix release CLI resumed the already fully downloaded, official-SHA-256-verified ISO from SQLite/fast resume; this was not a fresh full download."
+  }
+}

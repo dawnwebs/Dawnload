@@ -16,5 +16,8 @@ new record that supersedes the old one, rather than an edit.
 | [0008](0008-slint-prototype-verdict.md) | Slint prototype: measured, Slint confirmed | Accepted |
 | [0009](0009-licensing.md) | Licensing of dependencies and tools | Accepted (owner, 2026-11-10) |
 | [0010](0010-the-desktop-app-shell.md) | The desktop app's shell: one window, the tray, one instance, OS services | Accepted, for the owner to review |
+| [0011](0011-torrents-on-librqbit.md) | Torrents on librqbit: one session, courteous seeding, safe by default | Accepted; M1 validated, merge pending |
+| [0012](0012-torrent-state-is-a-cache.md) | Torrent metadata in SQLite; librqbit state is a cache | Accepted |
+| [0013](0013-portable-torrent-file-names.md) | Validate torrent path components before storage | Accepted |
 
 Format: Context, Decision, Alternatives, Consequences. Keep each one under two pages.

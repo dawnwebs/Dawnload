@@ -7,6 +7,9 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+librqbit = { version = "9.1", default-features = false, features = ["rust-tls"] }
+getrandom = "0.4"
+anyhow = "1"
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

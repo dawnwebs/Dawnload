@@ -156,11 +156,11 @@ mod tests {
         assert!(!e.can_submit);
 
         let e = say("magnet:?xt=urn:btih:c9e15763f722f23e98a29decdfae341b98d53056&dn=Ubuntu+24.04", &tools(true)).unwrap();
-        assert_eq!(e.text, "Magnet link · Ubuntu 24.04 · Torrent downloads aren't built yet.");
-        assert!(!e.can_submit);
+        assert_eq!(e.text, "Ubuntu 24.04 · Torrent will download this");
+        assert!(e.can_submit);
         assert_eq!(e.engine, Some(EngineId::Torrent));
 
         let e = say("/tmp/debian.torrent", &tools(true)).unwrap();
-        assert_eq!(e.text, ".torrent file · debian.torrent · Torrent downloads aren't built yet.");
+        assert_eq!(e.text, "debian.torrent · Torrent will download this");
     }
 }
