@@ -103,7 +103,7 @@ backup behind the same trait). No home-grown BitTorrent engine and no built-in t
 Decisions: [0011](adr/0011-torrents-on-librqbit.md), [0012](adr/0012-torrent-state-is-a-cache.md).
 Build plan and acceptance gates: [phase-4-torrents.md](plans/phase-4-torrents.md).
 
-**M1 built and validated (2026-11-17), PR #4 awaits owner review/merge:** one lazy librqbit 9.1 Session per core;
+**M1 merged (2026-11-18):** one lazy librqbit 9.1 Session per core;
 magnets, `.torrent` files and HTTP metadata links; Checking, file progress and swarm stats;
 ratio-limit completion and Stop Seeding; `Action::SelectFiles` while running; SQLite metadata
 BLOBs and persisted selections; fast resume and recovery without librqbit's cache. The desktop
@@ -113,8 +113,7 @@ uploads verified pieces to a separate local peer. Public peers requested no uplo
 observation. All six checks passed on `bfea393` across the five runners and licence gate.
 Claude's review then added portable filename validation and phase-event deduplication, covered
 by failing-then-passing regressions. All six checks then passed on `d82bad7`; both Windows
-runners confirmed the upstream drive-prefix behavior and the guarded rejection test. Final
-PR-head checks must remain green before owner merge. Review disposition and milestone follow-ups:
+runners confirmed the upstream drive-prefix behavior and the guarded rejection test. All checks passed on the final head before merge. Review disposition and milestone follow-ups:
 [phase-4-m1-claude-review.md](reviews/phase-4-m1-claude-review.md).
 
 The release core probe on this Mac measured 8.94 MiB mean RSS with no torrents and 12.65 MiB
@@ -124,7 +123,12 @@ The review-fix CLI is 19,796,656 bytes and the desktop is 43,381,728 bytes on th
 (about +9.6 MB each). The empty desktop measured 102 MiB physical footprint.
 CI records release build wall time and binary bytes on every runner.
 
-- **M2:** ratio/time policies, courtesy mode, automatic upload cap and seeding across restart.
+- **M2 implemented:** durable seed ratio and elapsed time limits, courtesy mode, upload caps and
+  restart. CLI settings and overrides are available. The inspector editor stays in demo before
+  M3 enables real torrents. This Mac passed 92 tests and Ubuntu ISO resume/upload. The release
+  core measured 9.49 MiB mean RSS with zero torrents and 15.20 MiB with five active loopback
+  downloads. Five-runner CI and VM acceptance are open. See
+  [M2 measurements](measurements/phase-4-m2-macos.json) and [0014](adr/0014-persistent-seeding-policy.md).
 - **M3:** the real chooser, smart selection, sharing note, Settings and OS handlers.
 - **M4:** connection binding/kill switch and Windows Mark of the Web.
 - **M5:** token-protected loopback playback with seeking.

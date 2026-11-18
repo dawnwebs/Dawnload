@@ -141,6 +141,7 @@ pub enum JobEvent {
     Title(String),
     Files(Vec<ItemFile>),
     Swarm(Swarm),
+    SeedProgress(crate::seeding::SeedProgress),
     Torrent(torrent::TorrentRecord),
 }
 
@@ -174,12 +175,23 @@ pub struct JobContext {
     pub stop: StopSignal,
     sender: mpsc::UnboundedSender<(ItemId, u64, JobEvent)>,
     pub(crate) torrents: Option<Arc<torrent::TorrentService>>,
+    pub(crate) seed_progress: crate::seeding::SeedProgress,
+    pub(crate) restoring_seed: bool,
     pub(crate) selection: Option<tokio::sync::watch::Receiver<Vec<usize>>>,
 }
 
 impl JobContext {
     pub fn new(item_id: ItemId, run: u64, stop: StopSignal, sender: mpsc::UnboundedSender<(ItemId, u64, JobEvent)>) -> Self {
-        JobContext { item_id, run, stop, sender, torrents: None, selection: None }
+        JobContext {
+            item_id,
+            run,
+            stop,
+            sender,
+            torrents: None,
+            seed_progress: Default::default(),
+            restoring_seed: false,
+            selection: None,
+        }
     }
 
     pub fn emit(&self, event: JobEvent) {

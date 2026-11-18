@@ -9,13 +9,10 @@ milestone closes). One pull request per milestone.
 
 ## M1 · The engine works (core only)
 
-Implementation status (2026-11-17): built and validated, PR #4 awaiting owner review/merge.
-The public Ubuntu ISO download, official checksum, stop/relaunch and upload verification passed
-on this Mac. Review fixes for portable names and phase events pass all 86 local tests. All six
-checks passed on `d82bad7`, including the native path probe on both Windows runners:
-[run 44095865946](https://github.com/dawnwebs/Dawnload/actions/runs/44095865946). Final PR-head
-checks must remain green before merge. M2 has not started; the next milestone needs M1 on main.
-Measurements and remaining Phase 4 gates are in ADR 0011's Consequences.
+M1 passed all six checks on `613000d` and [PR #4](https://github.com/dawnwebs/Dawnload/pull/4)
+merged on 2026-11-18. Its public Ubuntu ISO download, checksum, stop/relaunch and upload
+verification passed on this Mac. Both Windows runners passed the native path probe.
+Measurements are in ADR 0011’s Consequences.
 
 - Add `librqbit = { version = "9.1", default-features = false, features = ["rust-tls"] }`; check
   `cargo deny`, binary size and build time on the five runners.
@@ -38,6 +35,11 @@ Measurements and remaining Phase 4 gates are in ADR 0011's Consequences.
 - Exit: `dawnload get <magnet>` downloads and seeds a public Ubuntu ISO torrent on this Mac.
 
 ## M2 · Seeding policy
+
+Implementation in [ADR 0014](../adr/0014-persistent-seeding-policy.md). The CLI exposes global
+defaults in `torrent-settings`, per-item edits in `seed-limits`, and per-download overrides in
+`add` and `get`. Use `--seed-until-stopped` to disable both limits. The inspector editor is gated
+to demo until M3 enables desktop torrents.
 
 - Seed limits: ratio (default 1.0) or time (default 7 days), first one wins; per-item override in
   the inspector's Options; "until I stop it" as a choice.

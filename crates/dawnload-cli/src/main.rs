@@ -11,6 +11,7 @@ use dawnload_core::core::{Core, CoreConfig, CoreHandle};
 use dawnload_core::explain::Tone;
 use dawnload_core::model::{Checksum, Cookies, ItemId, Options, Quality, Status};
 use dawnload_core::present;
+use dawnload_core::seeding::{UploadCap, parse_ratio, parse_seed_days};
 use dawnload_core::source::EnginePreference;
 use dawnload_core::tools::{ToolId, ToolManager, ToolOrigin};
 use dawnload_core::{format, paths};
@@ -54,7 +55,29 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Run the queue until nothing is left. Ctrl-C pauses everything and exits.
+    /// View or change default torrent seeding limits, courtesy mode and the upload cap.
+    TorrentSettings {
+        #[command(flatten)]
+        limits: SeedArgs,
+        /// Pause seeding on battery or a metered network.
+        #[arg(long, value_enum)]
+        courtesy: Option<OnOff>,
+        /// auto, unlimited or a rate in bytes per second (at least 16384).
+        #[arg(long)]
+        upload_cap: Option<String>,
+        /// Clear Auto's saved measurement and learn on the next sustained upload.
+        #[arg(long)]
+        relearn_upload: bool,
+    },
+    /// Change a queued, paused or failed torrent's seeding limits.
+    SeedLimits {
+        id: u64,
+        #[command(flatten)]
+        limits: SeedArgs,
+    },
+    /// Keep a seeding torrent's files and end its seeding job.
+    StopSeeding { id: u64 },
+    /// Run the queue until nothing is left. Ctrl-C saves the queue and exits.
     Run,
     /// Pause an item (or `all`).
     Pause { target: String },
@@ -128,6 +151,56 @@ struct DownloadArgs {
     /// Connections per direct download.
     #[arg(short = 'c', long)]
     connections: Option<u8>,
+    #[command(flatten)]
+    seeds: SeedArgs,
+}
+
+#[derive(Args, Clone, Default)]
+struct SeedArgs {
+    /// Stop seeding at this ratio. Use "off" to disable this limit.
+    #[arg(long, conflicts_with = "seed_until_stopped")]
+    seed_ratio: Option<String>,
+    /// Stop seeding this many days after completion. Use "off" to disable this limit.
+    #[arg(long, conflicts_with = "seed_until_stopped")]
+    seed_days: Option<String>,
+    /// Disable both seed limits.
+    #[arg(long)]
+    seed_until_stopped: bool,
+}
+
+impl SeedArgs {
+    fn apply(&self, options: &mut Options) -> Result<(), String> {
+        if self.seed_until_stopped {
+            options.seed_ratio_limit = None;
+            options.seed_time_limit_secs = None;
+        }
+        if let Some(ratio) = &self.seed_ratio {
+            options.seed_ratio_limit = parse_ratio(ratio)?;
+        }
+        if let Some(days) = &self.seed_days {
+            options.seed_time_limit_secs = parse_seed_days(days)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum OnOff {
+    On,
+    Off,
+}
+
+fn parse_cap(value: &str) -> Result<UploadCap, String> {
+    match value {
+        "auto" => Ok(UploadCap::Auto),
+        "unlimited" => Ok(UploadCap::Unlimited),
+        _ => value
+            .parse()
+            .ok()
+            .map(UploadCap::Fixed)
+            .filter(|cap| cap.valid())
+            .ok_or_else(|| "Use auto, unlimited or at least 16384 bytes per second.".into()),
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -202,6 +275,7 @@ impl DownloadArgs {
         if let Some(n) = self.connections {
             options.connections = n.clamp(1, 16);
         }
+        self.seeds.apply(&mut options)?;
         Ok(options)
     }
 }
@@ -236,7 +310,9 @@ async fn main() -> ExitCode {
 }
 
 fn start_core(data_dir: &std::path::Path) -> Result<CoreHandle, String> {
-    Core::start(CoreConfig::new(data_dir.to_path_buf())).map_err(|e| e.to_string())
+    let mut config = CoreConfig::new(data_dir.to_path_buf());
+    config.restore_seeders = false;
+    Core::start(config).map_err(|e| e.to_string())
 }
 
 fn parse_target(text: &str) -> Result<Option<ItemId>, String> {
@@ -310,8 +386,49 @@ async fn run(command: Command, data_dir: PathBuf) -> Result<ExitCode, String> {
             core.shutdown().await;
             return Ok(if ok && !failed { ExitCode::SUCCESS } else { ExitCode::FAILURE });
         }
-        Command::Run => {
+        Command::TorrentSettings { limits, courtesy, upload_cap, relearn_upload } => {
+            let cap = upload_cap.as_deref().map(parse_cap).transpose()?;
             let core = start_core(&data_dir)?;
+            let mut settings = core.settings().await.ok_or("The core stopped.")?;
+            limits.apply(&mut settings.defaults)?;
+            if let Some(courtesy) = courtesy {
+                settings.seeding.courtesy = matches!(courtesy, OnOff::On);
+            }
+            if let Some(cap) = cap {
+                settings.seeding.upload_cap = cap;
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "seed_ratio_limit": settings.defaults.seed_ratio_limit,
+                    "seed_time_limit_secs": settings.defaults.seed_time_limit_secs,
+                    "courtesy": settings.seeding.courtesy,
+                    "upload_cap": settings.seeding.upload_cap,
+                }))
+                .map_err(|e| e.to_string())?
+            );
+            core.set_settings(settings).await;
+            if relearn_upload {
+                core.act(Action::RelearnTorrentUpload).await?;
+            }
+            core.shutdown().await;
+        }
+        Command::SeedLimits { id, limits } => {
+            let core = start_core(&data_dir)?;
+            let id = ItemId(id);
+            let mut options = core.detail(id).await.ok_or("No such item.")?.item.options;
+            limits.apply(&mut options)?;
+            core.act(Action::SetSeedLimits { id, ratio: options.seed_ratio_limit, seconds: options.seed_time_limit_secs })
+                .await?;
+            core.shutdown().await;
+        }
+        Command::StopSeeding { id } => {
+            let core = start_core(&data_dir)?;
+            core.act(Action::StopSeeding { id: ItemId(id) }).await?;
+            core.shutdown().await;
+        }
+        Command::Run => {
+            let core = Core::start(CoreConfig::new(data_dir.clone())).map_err(|e| e.to_string())?;
             core.act(Action::ResumeAll).await.ok();
             core.act(Action::StartQueue).await.ok();
             let ok = follow(&core, None).await;
@@ -423,7 +540,7 @@ async fn follow(core: &CoreHandle, ids: Option<Vec<ItemId>>) -> bool {
             update = sub.recv() => match update { Some(u) => u, None => return false },
             _ = &mut ctrl_c => {
                 if status_line { println!(); }
-                println!("Pausing everything; `dawnload run` continues where it stopped.");
+                println!("Saving the queue. `dawnload run` resumes it.");
                 core.act(Action::PauseAll).await.ok();
                 return false;
             }
@@ -437,10 +554,11 @@ async fn follow(core: &CoreHandle, ids: Option<Vec<ItemId>>) -> bool {
         // Lines for state changes; one live line for progress.
         for id in &watched {
             let Some(item) = mirror.item(*id) else { continue };
-            if last_status.get(id) != Some(&item.status) {
-                last_status.insert(*id, item.status);
+            let state = (item.status, (item.status == Status::Seeding).then(|| item.phase_detail.clone()).flatten());
+            if last_status.get(id) != Some(&state) {
+                last_status.insert(*id, state);
                 // `run` starts with the whole list; only say what happens from now on.
-                if ids.is_none() && (item.status == Status::Queued || (first && !item.status.is_active())) {
+                if ids.is_none() && (item.status == Status::Queued || (first && !item.status.is_running())) {
                     continue;
                 }
                 if status_line {
@@ -465,7 +583,7 @@ async fn follow(core: &CoreHandle, ids: Option<Vec<ItemId>>) -> bool {
             }
         }
         first = false;
-        let active: Vec<_> = watched.iter().filter_map(|id| mirror.item(*id)).filter(|i| i.status.is_active()).collect();
+        let active: Vec<_> = watched.iter().filter_map(|id| mirror.item(*id)).filter(|i| i.status.is_running()).collect();
         if tty && let Some(first) = active.first() {
             let more = if active.len() > 1 { format!("  (+{} more)", active.len() - 1) } else { String::new() };
             let line = format!("  {} · {}{more}", truncate(&first.title, 40), present::subline(first, None));
@@ -475,14 +593,19 @@ async fn follow(core: &CoreHandle, ids: Option<Vec<ItemId>>) -> bool {
         }
 
         let done = match &ids {
-            Some(ids) => ids.iter().all(|id| mirror.item(*id).is_none_or(|i| matches!(i.status, Status::Kept | Status::Failed))),
-            None => !mirror.queue.running && mirror.counts.active == 0,
+            Some(ids) => ids
+                .iter()
+                .all(|id| mirror.item(*id).is_none_or(|i| matches!(i.status, Status::Kept | Status::Failed | Status::Paused))),
+            None => !mirror.queue.running && mirror.counts.active == 0 && mirror.counts.seeding == 0,
         };
         if done {
             if status_line {
                 println!();
             }
-            return watched.iter().filter_map(|id| mirror.item(*id)).all(|i| i.status != Status::Failed);
+            return watched
+                .iter()
+                .filter_map(|id| mirror.item(*id))
+                .all(|i| i.status != Status::Failed && (ids.is_none() || i.status != Status::Paused));
         }
     }
 }

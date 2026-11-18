@@ -80,6 +80,10 @@ pub fn subline(item: &ItemView, queue_position: Option<usize>) -> String {
         },
         Status::Seeding => {
             let mut parts = vec!["Seeding".to_string()];
+            if let Some(detail) = &item.phase_detail {
+                parts.push(detail.clone());
+                return parts.join(" · ");
+            }
             if let Some(swarm) = &item.swarm {
                 parts.push(format!("↑ {}", format::speed(swarm.upload_rate)));
                 parts.push(format!("ratio {}", format::ratio(swarm.ratio)));

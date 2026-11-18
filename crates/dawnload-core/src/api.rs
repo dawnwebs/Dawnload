@@ -193,6 +193,8 @@ pub enum Update {
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
     StartQueue,
+    /// Discard the measured upload ceiling so Auto can measure it again.
+    RelearnTorrentUpload,
     /// Stops every download (not seeding) and the queue.
     PauseAll,
     ResumeAll,
@@ -220,6 +222,11 @@ pub enum Action {
     SelectFiles {
         id: ItemId,
         indices: Vec<usize>,
+    },
+    SetSeedLimits {
+        id: ItemId,
+        ratio: Option<f64>,
+        seconds: Option<u64>,
     },
     SetOptions {
         id: ItemId,

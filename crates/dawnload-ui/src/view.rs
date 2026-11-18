@@ -186,6 +186,16 @@ pub fn inspector(
         uploaded: format::bytes(swarm.uploaded).into(),
         ratio: format::ratio(swarm.ratio).into(),
         options: item.options_summary.as_str().into(),
+        seed_limits_editable: item.status.is_editable()
+            && detail.is_some_and(|d| {
+                d.item.engine == EngineId::Torrent || (d.item.engine == EngineId::Demo && item.source_kind != SourceKind::Web)
+            }),
+        seed_ratio: detail.and_then(|d| d.item.options.seed_ratio_limit).map(|n| n.to_string()).unwrap_or_default().into(),
+        seed_days: detail
+            .and_then(|d| d.item.options.seed_time_limit_secs)
+            .map(|n| (n / 86_400).to_string())
+            .unwrap_or_default()
+            .into(),
         engine: engine.into(),
         failure: item.failure.as_ref().map(|f| f.message.clone()).unwrap_or_default().into(),
         hint: item.failure.as_ref().and_then(|f| f.hint.clone()).unwrap_or_default().into(),
