@@ -1,0 +1,48 @@
+{
+  "process": "release core probe; seeder separate; loopback; five 4 MiB fixtures at 16 KiB/s each",
+  "measurements": [
+    {
+      "active_torrents": 0,
+      "rss_mean_mib": 9.49,
+      "rss_peak_mib": 11.95,
+      "physical_footprint_mib": 3.8125,
+      "samples": 20,
+      "warmup_seconds": 8
+    },
+    {
+      "active_torrents": 5,
+      "rss_mean_mib": 15.2,
+      "rss_peak_mib": 17.84,
+      "physical_footprint_mib": 7.5947265625,
+      "samples": 20,
+      "warmup_seconds": 8
+    }
+  ],
+  "machine": {
+    "hardware": "MacBookPro18,1",
+    "architecture": "arm64",
+    "memory_gib": 16,
+    "date": "2026-11-18"
+  },
+  "local_release_build_snapshot": {
+    "os": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "release_build_seconds": 184.8,
+    "binary_bytes": {
+      "dawnload": 19951232,
+      "dawnload-app": 43887696
+    },
+    "note": "Release step wall time; preceding debug checks and restored caches affect it.",
+    "stage": "M2 integration build before final upload-sampler tuning"
+  },
+  "ubuntu_resume_upload": {
+    "fixture": "ubuntu-24.04.3-live-server-amd64.iso",
+    "verified_peer_result": "VERIFIED_PIECES bytes=1216512",
+    "settings": "default courtesy; fixed 65536 B/s",
+    "uploaded_before": 11309056,
+    "uploaded_after_quit": 12525568,
+    "persisted_status": "seeding",
+    "qualifier": "Mac connected to AC, separate loopback leecher, existing checksum-verified ISO"
+  },
+  "validation": "92 local workspace tests including nine offline torrent integration tests. Format, Clippy and licence checks passed. No VM used."
+}

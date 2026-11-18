@@ -121,9 +121,23 @@ impl Store {
     /// Every item in queue order. Rows that don't parse (a newer field type, damage) are skipped
     /// rather than stopping Dawnload from starting.
     pub fn load_items(&self) -> Result<Vec<Item>, StoreError> {
-        let mut stmt = self.conn.prepare("SELECT data FROM items ORDER BY position, id")?;
-        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-        Ok(rows.filter_map(|r| r.ok()).filter_map(|json| serde_json::from_str(&json).ok()).collect())
+        let mut stmt = self.conn.prepare(
+            "SELECT data, CASE WHEN json_valid(data) THEN json_type(data, '$.seed_progress') IS NULL ELSE 0 END
+             FROM items ORDER BY position, id",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))?;
+        Ok(rows
+            .filter_map(Result::ok)
+            .filter_map(|(json, legacy)| {
+                let mut item: Item = serde_json::from_str(&json).ok()?;
+                if legacy && item.engine == crate::source::EngineId::Torrent {
+                    // M1 stored only the last run's uploaded bytes, so this is a lower bound.
+                    item.seed_progress.uploaded = item.swarm.as_ref().map_or(0, |swarm| swarm.uploaded);
+                    item.seed_progress.started_at = item.finished_at;
+                }
+                Some(item)
+            })
+            .collect())
     }
 
     pub fn torrent(&self, id: ItemId) -> Result<Option<crate::engine::torrent::TorrentRecord>, StoreError> {
@@ -279,6 +293,27 @@ mod tests {
 
     fn item(id: u64) -> Item {
         Item::new(ItemId(id), DownloadSource::parse(&format!("https://example.com/{id}.zip")).unwrap(), Options::default())
+    }
+
+    #[test]
+    fn credits_legacy_torrent_progress_only_when_the_checkpoint_is_absent() -> anyhow::Result<()> {
+        let mut store = Store::open_in_memory()?;
+        let mut item = Item::new(
+            ItemId(1),
+            crate::source::DownloadSource::parse("magnet:?xt=urn:btih:0123456789012345678901234567890123456789").unwrap(),
+            Default::default(),
+        );
+        item.swarm = Some(crate::model::Swarm { uploaded: 500, ..Default::default() });
+        item.finished_at = Some(1234);
+        let mut legacy = serde_json::to_value(&item)?;
+        legacy.as_object_mut().unwrap().remove("seed_progress");
+        store.conn.execute("INSERT INTO items VALUES (1, 0, 'paused', ?1, 0)", [legacy.to_string()])?;
+        let progress = store.load_items()?[0].seed_progress;
+        assert_eq!(progress.uploaded, 500);
+        assert_eq!(progress.started_at, Some(1234));
+        store.apply(&[StoreOp::Upsert { item: Box::new(item), position: 0 }])?;
+        assert_eq!(store.load_items()?[0].seed_progress, Default::default());
+        Ok(())
     }
 
     #[test]

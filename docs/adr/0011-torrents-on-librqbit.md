@@ -1,7 +1,7 @@
 # 0011 · Torrents on librqbit: one session, courteous seeding, safe by default
 
-Status: Accepted (2026-11-17); M1 built and validated; owner merge pending. M2–M5 planned. Supersedes ADR 0003's last bullet (an
-item seeding at quit now resumes seeding at launch, below). The build plan is
+Status: Accepted (2026-11-17). M1 merged. M2 implementation is in ADR 0014. M3–M5 are planned.
+This supersedes ADR 0003's quit rule for seeders. The build plan is
 [plans/phase-4-torrents.md](../plans/phase-4-torrents.md).
 
 ## Context
@@ -102,7 +102,7 @@ librqbit 9.1.0 (2026-10-29), read from source for this record:
 
 - No protocol encryption; throttling may warrant an upstream MSE/PE contribution or revisiting
   libtorrent. No BitTorrent v2-only support; hybrid torrents use their v1 half.
-- **M1 built and validated (2026-11-17), PR #4 awaits owner review/merge:** one lazy Session,
+- **M1 built and validated (2026-11-17), PR #4 merged on 2026-11-18:** one lazy Session,
   SQLite metadata/selection, live selection, Checking, swarm stats, fast resume/cache recovery,
   ratio completion and Stop Seeding. The desktop remains gated until M3. See
   [0012](0012-torrent-state-is-a-cache.md) for ownership/cache decisions.
@@ -111,7 +111,7 @@ librqbit 9.1.0 (2026-10-29), read from source for this record:
   Ubuntu 24.04 x64/ARM, Windows x64/ARM, macOS and licences. Offline swarms cover the M1 lifecycle.
   Both Windows runners confirmed upstream drive-prefix escape semantics and the guarded
   rejection test (non-writing probe, [0013](0013-portable-torrent-file-names.md)). Phase-event
-  deduplication has a real-engine regression. Final PR-head checks must remain green for merge.
+  deduplication has a real-engine regression. All six checks passed on the final PR head.
 - **Public exit:** the complete Ubuntu 24.04.3 server ISO matches
   [Canonical's SHA-256](https://releases.ubuntu.com/24.04.3/SHA256SUMS), resumes after quit, and
   seeds verified pieces to a separate local peer. Public peers requested no uploads during
@@ -127,8 +127,15 @@ librqbit 9.1.0 (2026-10-29), read from source for this record:
   alongside ring. The full increase cannot all be attributed to crypto without a controlled
   comparison. [Five-runner measurements](../measurements/phase-4-m1-ci-d82bad7.json) record
   sizes and release-step times; cache/runner differences prevent controlled timing comparisons.
-- **Open:** M2 cumulative upload accounting, time limits, courtesy/cap controls and seeding
-  restart (downloads still return Paused); M3 UI/chooser scheduling; M4 safety; M5 playback;
+- **M2:** lifetime accounting, deadline, courtesy/cap controls and seeding restart are
+  implemented in [0014](0014-persistent-seeding-policy.md). Downloads still return Paused.
+  Local format, Clippy, licence and all 92 workspace tests pass. The Ubuntu ISO resume/upload
+  check passed on this Mac with the OS adapter active. Core mean RSS was 9.49 MiB with no
+  torrents and 15.20 MiB with five throttled loopback downloads, excluding the seeder. The
+  M2 integration binaries measured 19,951,232 bytes for the CLI and 43,887,696 for the desktop.
+  [M2 measurements](../measurements/phase-4-m2-macos.json) record the method and build stage.
+  Five-runner CI and native metering and battery transitions still need acceptance.
+- **Open:** M3 UI/chooser scheduling, M4 safety and M5 playback;
   both VM acceptance runs, interop and production memory/CPU. Upstream rarest-first, live rate
   limits and provider-neutral rustls remain queued. No fork. See the
   [review disposition](../reviews/phase-4-m1-claude-review.md) and [plan](../plans/phase-4-torrents.md).

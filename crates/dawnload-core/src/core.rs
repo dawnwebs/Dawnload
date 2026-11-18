@@ -3,8 +3,8 @@
 //!
 //! Rules it keeps:
 //! - One failure never stops the rest: a failed, crashed or panicking job fails its item only.
-//! - Nothing is lost on quit or crash: items are written as they change; anything that was running
-//!   comes back Paused, and Resume continues from the partial files.
+//! - Items are checkpointed as they change. Interrupted downloads return Paused and resume from
+//!   partial files. Torrent seeders resume automatically in a core that runs torrents.
 //! - A seeding job stays owned by the queue (so Stop Seeding reaches it) but doesn't hold a
 //!   download slot in its lane.
 
@@ -34,6 +34,7 @@ pub struct Settings {
     pub defaults: Options,
     /// Chosen once per data folder, in the dynamic/private range.
     pub torrent_port: u16,
+    pub seeding: crate::seeding::SeedingSettings,
     /// Download slots per lane.
     pub lane_limits: BTreeMap<Lane, usize>,
     /// Update Dawnload's own tool copies once a day.
@@ -107,6 +108,7 @@ impl Default for Settings {
         Settings {
             defaults: Options::default(),
             torrent_port: 0,
+            seeding: Default::default(),
             lane_limits: Lane::ALL.into_iter().map(|l| (l, l.default_limit())).collect(),
             auto_update_tools: true,
             auto_retries: 2,
@@ -138,6 +140,10 @@ pub struct CoreConfig {
     /// Check tool versions in the background at start.
     pub check_tools: bool,
     pub torrent_network: TorrentNetwork,
+    /// Long-running clients resume persisted seeders. Queue maintenance can defer them.
+    pub restore_seeders: bool,
+    pub seed_clock: std::sync::Arc<dyn crate::seeding::SeedClock>,
+    pub seed_conditions: std::sync::Arc<dyn crate::seeding::SeedConditionsSource>,
 }
 
 impl CoreConfig {
@@ -152,6 +158,9 @@ impl CoreConfig {
             single_instance: true,
             check_tools: true,
             torrent_network: TorrentNetwork::default(),
+            restore_seeders: true,
+            seed_clock: std::sync::Arc::new(crate::seeding::SystemClock),
+            seed_conditions: std::sync::Arc::new(crate::system_conditions::SystemConditions::default()),
         }
     }
 
@@ -361,11 +370,19 @@ impl Core {
                 writer.send(vec![StoreOp::Setting { key: "settings".into(), value: serde_json::to_string(&settings).unwrap() }]);
             }
         }
+        let upload_peak = reader
+            .as_ref()
+            .and_then(|r| r.setting("torrent_upload_peak").ok().flatten())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_default();
         let torrents = std::sync::Arc::new(TorrentService::new(
             config.data_dir.join("torrents"),
             settings.torrent_port,
             config.torrent_network,
             config.update_interval,
+            (settings.seeding, upload_peak),
+            config.seed_clock,
+            config.seed_conditions,
         ));
         let (tx, rx) = mpsc::unbounded_channel();
         let (events_tx, events_rx) = mpsc::unbounded_channel();
@@ -395,6 +412,7 @@ impl Core {
             settings,
             registry: config.registry,
             torrents,
+            upload_peak,
             tools,
             tool_cache: None,
             tool_statuses: Vec::new(),
@@ -420,18 +438,28 @@ impl Core {
             shutting_down: false,
             _lock: lock,
         };
-        // Anything that was running when Dawnload stopped comes back Paused.
-        let mut recovered = Vec::new();
+        let mut restore_seeds = Vec::new();
         for item in items {
-            let was_running = item.status.is_running();
-            let item = item.recovered();
-            if was_running {
-                recovered.push(item.id);
+            let id = item.id;
+            if item.engine == EngineId::Torrent && item.status == Status::Seeding {
+                if config.restore_seeders && actor.registry.get(EngineId::Torrent).is_some() {
+                    restore_seeds.push(id);
+                }
+                let mut item = item;
+                item.swarm = None;
+                item.transfer.bytes_per_second = None;
+                item.transfer.seconds_left = None;
+                item.phase_detail = Some("Resumes when Dawnload runs torrents".into());
+                actor.items.insert(id, item);
+            } else if item.status.is_running() {
+                actor.items.insert(id, item.recovered());
+                actor.persist(id);
+            } else {
+                actor.items.insert(id, item);
             }
-            actor.items.insert(item.id, item);
         }
-        for id in recovered {
-            actor.persist(id);
+        for id in restore_seeds {
+            actor.start(id, true);
         }
 
         if config.check_tools {
@@ -525,6 +553,7 @@ struct Actor {
     settings: Settings,
     registry: Registry,
     torrents: std::sync::Arc<TorrentService>,
+    upload_peak: u32,
     tools: ToolManager,
     tool_cache: Option<(Instant, ToolSnapshot)>,
     tool_statuses: Vec<ToolStatus>,
@@ -626,14 +655,9 @@ impl Actor {
             }
         }
 
-        // Whatever didn't stop in time comes back Paused next launch.
-        let leftover: Vec<ItemId> = self.running.keys().copied().collect();
-        for id in leftover {
-            self.running.remove(&id);
-            if let Some(item) = self.items.remove(&id) {
-                self.items.insert(id, item.recovered());
-            }
-            self.persist(id);
+        let leftover: Vec<_> = self.running.iter().map(|(id, running)| (*id, running.run)).collect();
+        for (id, run) in leftover {
+            self.job_done(id, run, Err(JobError::Stopped));
         }
         self.torrents.shutdown().await;
         self.persist_progress();
@@ -695,6 +719,7 @@ impl Actor {
                 // A running Session keeps its listening port; port changes take effect next launch.
                 let port = self.settings.torrent_port;
                 self.settings = *settings;
+                self.torrents.set_settings(self.settings.seeding);
                 if self.settings.torrent_port < 49152 {
                     self.settings.torrent_port = port;
                 }
@@ -761,6 +786,10 @@ impl Actor {
             options.destination = std::env::current_dir().unwrap_or_default().join(&options.destination);
         }
         let engine_id = self.engine_override.unwrap_or_else(|| options.engine.resolve(&source));
+        if engine_id == EngineId::Torrent {
+            crate::seeding::validate_ratio(options.seed_ratio_limit)
+                .map_err(|message| DownloadFailure::new(crate::failure::FailureKind::Other, message, None))?;
+        }
         let engine = self.registry.get(engine_id).cloned().ok_or_else(DownloadFailure::torrents_unavailable)?;
         let tools = self.tool_snapshot();
         if let Some(failure) = engine.availability(&tools, &options).failure() {
@@ -792,6 +821,11 @@ impl Actor {
 
     fn act(&mut self, action: Action) -> Result<(), String> {
         match action {
+            Action::RelearnTorrentUpload => {
+                self.torrents.relearn_upload();
+                self.upload_peak = 0;
+                self.store(vec![StoreOp::Setting { key: "torrent_upload_peak".into(), value: "0".into() }]);
+            }
             Action::StartQueue => {
                 self.queue_running = true;
                 self.counts_dirty = true;
@@ -821,7 +855,7 @@ impl Actor {
                 let status = self.items.get(&id).ok_or("No such item.")?.status;
                 if self.running.contains_key(&id) {
                     self.stop(id, StopIntent::Pause);
-                } else if status == Status::Queued {
+                } else if matches!(status, Status::Queued | Status::Seeding) {
                     self.not_before.remove(&id);
                     let item = self.items.get_mut(&id).unwrap();
                     item.phase_detail = None;
@@ -831,6 +865,10 @@ impl Actor {
             }
             Action::Resume { id } => {
                 let item = self.items.get_mut(&id).ok_or("No such item.")?;
+                if item.status == Status::Seeding && !self.running.contains_key(&id) && self.registry.get(item.engine).is_some() {
+                    self.start(id, true);
+                    return Ok(());
+                }
                 if !item.status.is_editable() {
                     return Err(format!("It's {}, so there's nothing to resume.", item.status.word()));
                 }
@@ -856,7 +894,13 @@ impl Actor {
             }
             Action::StopSeeding { id } => {
                 if self.items.get(&id).is_some_and(|i| i.status == Status::Seeding) {
-                    self.stop(id, StopIntent::StopSeeding);
+                    if self.running.contains_key(&id) {
+                        self.stop(id, StopIntent::StopSeeding);
+                    } else {
+                        self.items.get_mut(&id).unwrap().phase_detail = None;
+                        self.set_status(id, Status::Kept);
+                        self.persist(id);
+                    }
                 } else {
                     return Err("It isn't seeding.".into());
                 }
@@ -886,6 +930,18 @@ impl Actor {
                 if let Some(running) = self.running.get(&id) {
                     running.selection.send_replace(indices);
                 }
+                self.mark(id);
+                self.detail_dirty.insert(id);
+                self.persist(id);
+            }
+            Action::SetSeedLimits { id, ratio, seconds } => {
+                let item = self.items.get_mut(&id).ok_or("No such item.")?;
+                if !item.status.is_editable() || !matches!(item.engine, EngineId::Torrent | EngineId::Demo) {
+                    return Err("Seed limits can change while a torrent is queued, paused or failed.".into());
+                }
+                crate::seeding::validate_ratio(ratio).map_err(str::to_owned)?;
+                item.options.seed_ratio_limit = ratio;
+                item.options.seed_time_limit_secs = seconds;
                 self.mark(id);
                 self.detail_dirty.insert(id);
                 self.persist(id);
@@ -947,6 +1003,10 @@ impl Actor {
                     StopIntent::Remove => "Removing".into(),
                 });
                 self.dirty.insert(id);
+                // A crash after the stop request must not restore this seeder.
+                if item.engine == EngineId::Torrent && item.status == Status::Seeding {
+                    self.persist(id);
+                }
             }
         }
     }
@@ -1011,7 +1071,7 @@ impl Actor {
                 && *slots > 0
             {
                 *slots -= 1;
-                self.start(id);
+                self.start(id, false);
             }
         }
         let waiting = self.items.values().any(|i| i.status == Status::Queued);
@@ -1021,7 +1081,7 @@ impl Actor {
         }
     }
 
-    fn start(&mut self, id: ItemId) {
+    fn start(&mut self, id: ItemId, restoring_seed: bool) {
         let tools = self.tool_snapshot();
         let item = self.items.get(&id).expect("item");
         let Some(engine) = self.registry.get(item.engine).cloned() else {
@@ -1054,6 +1114,12 @@ impl Actor {
         let mut context = JobContext::new(id, run, stop.clone(), self.events_tx.clone());
         context.torrents = Some(self.torrents.clone());
         context.selection = Some(selection_rx);
+        context.seed_progress = item.seed_progress;
+        if restoring_seed && context.seed_progress.started_at.is_none() {
+            context.seed_progress.started_at = item.finished_at;
+        }
+        let seed_progress = context.seed_progress;
+        context.restoring_seed = restoring_seed;
         let future = engine.run(request, context);
         let done_tx = self.done_tx.clone();
         tokio::spawn(async move {
@@ -1072,14 +1138,17 @@ impl Actor {
 
         let item = self.items.get_mut(&id).unwrap();
         item.failure = None;
-        item.phase_detail = None;
+        item.seed_progress = seed_progress;
+        item.phase_detail = restoring_seed.then(|| "Checking".into());
         item.swarm = None;
-        item.finished_at = None;
+        if !restoring_seed {
+            item.finished_at = None;
+        }
         item.attempts += 1;
         if !resuming {
             item.transfer = Default::default();
         }
-        self.set_status(id, Status::Pulling);
+        self.set_status(id, if restoring_seed { Status::Seeding } else { Status::Pulling });
         self.log(id, format!("Started at {}{}", clock_time(), if resuming { ", continuing" } else { "" }));
         self.persist(id);
     }
@@ -1146,6 +1215,12 @@ impl Actor {
                 self.persist(id);
                 self.store(vec![StoreOp::Torrent { id, record }]);
             }
+            JobEvent::SeedProgress(progress) => {
+                if item.seed_progress != progress {
+                    item.seed_progress = progress;
+                    self.persist_dirty.insert(id);
+                }
+            }
             JobEvent::Swarm(swarm) => {
                 item.swarm = Some(swarm);
                 self.mark(id);
@@ -1171,8 +1246,21 @@ impl Actor {
                 item.phase_detail = None;
                 item.transfer.bytes_per_second = None;
                 item.transfer.seconds_left = None;
+                if let Some(swarm) = &mut item.swarm {
+                    swarm.peers = 0;
+                    swarm.seeds = 0;
+                    swarm.download_rate = 0.0;
+                    swarm.upload_rate = 0.0;
+                    if item.engine == EngineId::Torrent {
+                        swarm.uploaded = item.seed_progress.uploaded;
+                        swarm.ratio = item.seed_progress.ratio(item.transfer.bytes_total.unwrap_or_default());
+                    }
+                }
                 let (status, line) = match running.intent {
                     Some(StopIntent::StopSeeding) => (Status::Kept, "Stopped seeding."),
+                    None if self.shutting_down && was_seeding && item.engine == EngineId::Torrent => {
+                        (Status::Seeding, "Will resume seeding on launch.")
+                    }
                     _ if was_seeding => (Status::Paused, "Paused seeding."),
                     _ => (Status::Paused, "Paused."),
                 };
@@ -1280,21 +1368,41 @@ impl Actor {
         }
     }
 
+    fn checkpoint(&self, item: &Item) -> Box<Item> {
+        let mut saved = Box::new(item.clone());
+        if item.engine == EngineId::Torrent
+            && item.status == Status::Seeding
+            && let Some(intent) = self.running.get(&item.id).and_then(|running| running.intent)
+        {
+            saved.status = match intent {
+                StopIntent::StopSeeding => Status::Kept,
+                StopIntent::Pause | StopIntent::Remove => Status::Paused,
+            };
+            saved.phase_detail = None;
+        }
+        saved
+    }
+
     fn persist(&mut self, id: ItemId) {
         self.persist_dirty.remove(&id);
         let Some(item) = self.items.get(&id) else { return };
         let position = self.order.iter().position(|i| *i == id).unwrap_or(self.order.len()) as i64;
-        self.store(vec![StoreOp::Upsert { item: Box::new(item.clone()), position }]);
+        self.store(vec![StoreOp::Upsert { item: self.checkpoint(item), position }]);
     }
 
     fn persist_progress(&mut self) {
+        let peak = self.torrents.upload_peak();
+        if self.upload_peak != peak {
+            self.upload_peak = peak;
+            self.store(vec![StoreOp::Setting { key: "torrent_upload_peak".into(), value: peak.to_string() }]);
+        }
         let ids: Vec<ItemId> = self.persist_dirty.drain().collect();
         let ops: Vec<StoreOp> = ids
             .into_iter()
             .filter_map(|id| {
                 let item = self.items.get(&id)?;
                 let position = self.order.iter().position(|i| *i == id)? as i64;
-                Some(StoreOp::Upsert { item: Box::new(item.clone()), position })
+                Some(StoreOp::Upsert { item: self.checkpoint(item), position })
             })
             .collect();
         self.store(ops);

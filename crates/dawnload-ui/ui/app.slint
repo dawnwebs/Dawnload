@@ -2,7 +2,7 @@
 // it rows built from the core's snapshot + diff stream (see src/bridge.rs), and gets back what
 // the person did as callbacks.
 
-import { ListView, ScrollView } from "std-widgets.slint";
+import { LineEdit, ListView, ScrollView } from "std-widgets.slint";
 import { Theme, S } from "theme.slint";
 import { RowData, CutD, Pill, SectionHeader, Stat, InspectorSection, IconButton, SectionTitle } from "parts.slint";
 import { SettingsPage, FirstRunCard, AboutCard, Prefs, ToolRow, Choices } from "settings.slint";
@@ -39,6 +39,9 @@ export struct InspectorData {
     uploaded: string,
     ratio: string,
     options: string,
+    seed-limits-editable: bool,
+    seed-ratio: string,
+    seed-days: string,
     engine: string,
     failure: string,
     hint: string,
@@ -269,6 +272,7 @@ export component AppWindow inherits Window {
     callback select(int);
     callback move-selection(int);
     callback item-action(int, string);
+    callback set-seed-limits(int, string, string);
     callback reorder(int, int);
     callback queue-action();
     callback inspector-toggled(bool);
@@ -858,6 +862,33 @@ export component AppWindow inherits Window {
                     InspectorSection {
                         title: "OPTIONS";
                         Text { text: root.inspector.options; color: Theme.text; font-family: Theme.mono; font-size: 11px; wrap: word-wrap; }
+                        // The policy editor is exercised in demo until real torrent intake ships.
+                        for item in root.inspector.seed-limits-editable && root.mode-note != "" ? [root.inspector.id] : [] : VerticalLayout {
+                            spacing: 6px;
+                            Text { text: "Seed ratio"; color: Theme.text2; font-size: 11px; }
+                            ratio := LineEdit {
+                                text: root.inspector.seed-ratio;
+                                accessible-label: "Seed ratio";
+                                placeholder-text: "Off";
+                            }
+                            Text { text: "Seed days"; color: Theme.text2; font-size: 11px; }
+                            days := LineEdit {
+                                text: root.inspector.seed-days;
+                                accessible-label: "Seed days";
+                                placeholder-text: "Off";
+                            }
+                            HorizontalLayout {
+                                spacing: 6px; alignment: start;
+                                Pill {
+                                    label: "Save limits"; height: 24px; label-size: 10px;
+                                    clicked => { root.set-seed-limits(item, ratio.text, days.text); }
+                                }
+                                Pill {
+                                    label: "Until I stop it"; height: 24px; label-size: 10px;
+                                    clicked => { root.set-seed-limits(item, "", ""); }
+                                }
+                            }
+                        }
                     }
                     InspectorSection {
                         title: "LOG";

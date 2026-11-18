@@ -2,15 +2,39 @@
 //! Runs unchanged on all five CI runners; only loopback sockets are needed.
 
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicI64, Ordering},
+};
 use std::time::Duration;
 
 use dawnload_core::engine::Lane;
 use dawnload_core::engine::torrent::TorrentNetwork;
+use dawnload_core::seeding::{SeedClock, SeedConditions, SeedConditionsSource, UploadCap};
 use dawnload_core::{Action, Core, CoreConfig, CoreHandle, Item, ItemId, Options, Status};
 use librqbit::{CreateTorrentOptions, ListenerOptions, Session, SessionOptions};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
+
+#[derive(Default)]
+struct FakeConditions {
+    metered: AtomicBool,
+    battery: AtomicBool,
+}
+
+impl SeedConditionsSource for FakeConditions {
+    fn sample(&self) -> SeedConditions {
+        SeedConditions { metered: self.metered.load(Ordering::SeqCst), on_battery: self.battery.load(Ordering::SeqCst) }
+    }
+}
+
+struct FakeClock(AtomicI64);
+
+impl SeedClock for FakeClock {
+    fn now_millis(&self) -> i64 {
+        self.0.load(Ordering::SeqCst)
+    }
+}
 
 struct Swarm {
     dir: TempDir,
@@ -57,6 +81,7 @@ impl Swarm {
     fn config(&self) -> CoreConfig {
         let mut config = CoreConfig::new(self.dir.path().join("state"));
         config.check_tools = false;
+        config.seed_conditions = Arc::new(FakeConditions::default());
         config.update_interval = Duration::from_millis(25);
         config.torrent_network = TorrentNetwork {
             offline: true,
@@ -176,6 +201,8 @@ async fn restart_fastresume_and_deleted_or_corrupt_cache_rebuild_from_sqlite() {
         core.act(Action::Resume { id }).await.unwrap();
         let item = swarm.item(&core, id, |i| i.status == Status::Seeding).await;
         swarm.check_files(&item);
+        core.act(Action::Pause { id }).await.unwrap();
+        swarm.item(&core, id, |i| i.status == Status::Paused).await;
         core.shutdown().await;
     }
     swarm.seeder.stop().await;
@@ -205,8 +232,7 @@ async fn file_selection_skips_and_changes_while_running_and_survives_restart() {
     core.shutdown().await;
     let core = swarm.core();
     assert!(!core.detail(id).await.unwrap().item.files[0].selected);
-    core.act(Action::Resume { id }).await.unwrap();
-    let item = swarm.item(&core, id, |i| i.status == Status::Seeding).await;
+    let item = swarm.item(&core, id, |i| i.status == Status::Seeding && i.phase_detail.is_none()).await;
     assert!(!item.files[0].selected);
     assert_eq!(item.transfer.bytes_total, Some(1024 * 1024));
     core.shutdown().await;
@@ -353,4 +379,136 @@ fn upstream_drive_component_can_replace_the_windows_destination() {
     let relative = info.iter_file_details().next().unwrap().filename.to_pathbuf();
     let destination = std::path::PathBuf::from(r"C:\Dawnload\chosen-folder");
     assert!(!destination.join(relative).starts_with(&destination));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn courtesy_keeps_downloads_running_and_seed_deadline_survives_restart() {
+    let swarm = Swarm::new().await;
+    let conditions = Arc::new(FakeConditions::default());
+    conditions.battery.store(true, Ordering::SeqCst);
+    let clock = Arc::new(FakeClock(AtomicI64::new(1_000_000)));
+    let start = || {
+        let mut config = swarm.config();
+        config.seed_conditions = conditions.clone();
+        config.seed_clock = clock.clone();
+        Core::start(config).unwrap()
+    };
+    let core = start();
+    let id = core
+        .add(&swarm.magnet, Some(Options { seed_time_limit_secs: Some(30), seed_ratio_limit: None, ..swarm.options() }), true)
+        .await
+        .unwrap();
+
+    let on_battery = swarm.item(&core, id, |i| i.phase_detail.as_deref() == Some("Paused on battery")).await;
+    assert_eq!(on_battery.status, Status::Seeding);
+    assert_eq!(on_battery.seed_progress.started_at, Some(1_000_000));
+    swarm.check_files(&on_battery);
+    assert_eq!(on_battery.swarm.unwrap().upload_rate, 0.0);
+
+    conditions.metered.store(true, Ordering::SeqCst);
+    conditions.battery.store(false, Ordering::SeqCst);
+    swarm.item(&core, id, |i| i.phase_detail.as_deref() == Some("Paused on metered network")).await;
+    conditions.metered.store(false, Ordering::SeqCst);
+    swarm.item(&core, id, |i| i.status == Status::Seeding && i.phase_detail.is_none()).await;
+    core.shutdown().await;
+
+    clock.0.store(1_029_999, Ordering::SeqCst);
+    let core = start();
+    let resumed = swarm.item(&core, id, |i| i.status == Status::Seeding && i.phase_detail.is_none()).await;
+    assert_eq!(resumed.seed_progress.started_at, Some(1_000_000));
+    clock.0.store(1_030_000, Ordering::SeqCst);
+    swarm.item(&core, id, |i| i.status == Status::Kept).await;
+    core.shutdown().await;
+    swarm.seeder.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn near_limit_seed_keeps_its_budget_through_pauses_and_restarts() {
+    use librqbit::{AddTorrent, AddTorrentOptions};
+    let swarm = Swarm::new().await;
+    let core = swarm.core();
+    let id = core.add(&swarm.torrent, Some(swarm.options()), true).await.unwrap();
+    swarm.item(&core, id, |i| i.status == Status::Seeding).await;
+    core.act(Action::Pause { id }).await.unwrap();
+    swarm.item(&core, id, |i| i.status == Status::Paused).await;
+    core.shutdown().await;
+
+    // Start just short of the ratio limit. Preloading a durable checkpoint isolates the
+    // boundary regardless of how the scheduler batches loopback packets.
+    let config = swarm.config();
+    let mut store = dawnload_core::store::Store::open(config.database.as_ref().unwrap()).unwrap();
+    let mut item = store.load_items().unwrap().pop().unwrap();
+    let selected_bytes = item.kept_bytes().unwrap();
+    let previous = selected_bytes - 32 * 1024;
+    item.seed_progress.uploaded = previous;
+    store.apply(&[dawnload_core::store::StoreOp::Upsert { item: Box::new(item), position: 0 }]).unwrap();
+    drop(store);
+
+    let core = swarm.core();
+    core.act(Action::SetSeedLimits { id, ratio: Some(1.0), seconds: None }).await.unwrap();
+    core.act(Action::Resume { id }).await.unwrap();
+    swarm.item(&core, id, |i| i.status == Status::Seeding && i.swarm.as_ref().is_some_and(|s| s.uploaded == previous)).await;
+    core.shutdown().await;
+    // Launch once with no downloaders and verify the old bytes were neither lost nor added twice.
+    let core = swarm.core();
+    swarm.item(&core, id, |i| i.status == Status::Seeding && i.swarm.as_ref().is_some_and(|s| s.uploaded == previous)).await;
+    core.shutdown().await;
+
+    let receiver = Session::new_with_opts(
+        swarm.dir.path().join("leecher"),
+        SessionOptions {
+            dht: None,
+            disable_trackers: true,
+            disable_local_service_discovery: true,
+            listen: Some(ListenerOptions { listen_addr: (Ipv4Addr::LOCALHOST, 0).into(), ..Default::default() }),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let leecher = receiver
+        .add_torrent(
+            AddTorrent::from_bytes(swarm.bytes.clone()),
+            Some(AddTorrentOptions { disable_trackers: true, ..Default::default() }),
+        )
+        .await
+        .unwrap()
+        .into_handle()
+        .unwrap();
+    let mut config = swarm.config();
+    config.torrent_network.initial_peers = vec![receiver.listen_addr().unwrap()];
+    let conditions = Arc::new(FakeConditions::default());
+    conditions.metered.store(true, Ordering::SeqCst);
+    config.seed_conditions = conditions.clone();
+    let core = Core::start(config).unwrap();
+    let mut settings = core.settings().await.unwrap();
+    settings.seeding.upload_cap = UploadCap::Fixed((64 * 1024).try_into().unwrap());
+    core.set_settings(settings).await;
+    let parked = swarm.item(&core, id, |i| i.phase_detail.as_deref() == Some("Paused on metered network")).await;
+    assert_eq!(parked.seed_progress.uploaded, previous);
+    assert_eq!(leecher.stats().progress_bytes, 0);
+    conditions.metered.store(false, Ordering::SeqCst);
+    let kept = swarm.item(&core, id, |i| i.status == Status::Kept).await;
+    assert!(kept.seed_progress.uploaded >= selected_bytes);
+    assert!(kept.seed_progress.uploaded < previous + selected_bytes / 2, "used more than the remaining budget");
+    core.shutdown().await;
+    receiver.stop().await;
+    swarm.seeder.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn restored_seed_with_missing_data_waits_for_manual_resume() {
+    let swarm = Swarm::new().await;
+    let core = swarm.core();
+    let id = core.add(&swarm.torrent, Some(swarm.options()), true).await.unwrap();
+    let item = swarm.item(&core, id, |i| i.status == Status::Seeding).await;
+    core.shutdown().await;
+    std::fs::remove_file(&item.files[0].path).unwrap();
+    let core = swarm.core();
+    swarm.item(&core, id, |i| i.status == Status::Paused).await;
+    core.act(Action::Resume { id }).await.unwrap();
+    let repaired = swarm.item(&core, id, |i| i.status == Status::Seeding).await;
+    swarm.check_files(&repaired);
+    core.shutdown().await;
+    swarm.seeder.stop().await;
 }

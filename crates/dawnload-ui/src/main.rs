@@ -256,6 +256,10 @@ fn wire_callbacks(app: &AppWindow, ui_tx: &mpsc::UnboundedSender<UiMessage>) {
     let tx = ui_tx.clone();
     app.on_move_selection(move |d| drop(tx.send(UiMessage::MoveSelection(d))));
     let tx = ui_tx.clone();
+    app.on_set_seed_limits(move |id, ratio, days| {
+        drop(tx.send(UiMessage::SetSeedLimits(ItemId(id as u64), ratio.to_string(), days.to_string())));
+    });
+    let tx = ui_tx.clone();
     app.on_item_action(move |id, action| drop(tx.send(UiMessage::Item { id: ItemId(id as u64), action: action.to_string() })));
     let tx = ui_tx.clone();
     app.on_reorder(move |id, delta| drop(tx.send(UiMessage::Reorder { id: ItemId(id as u64), delta })));

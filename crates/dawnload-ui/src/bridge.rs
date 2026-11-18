@@ -43,6 +43,7 @@ pub enum UiMessage {
     QueueAction,
     Command(String),
     SetOption(String, i32),
+    SetSeedLimits(ItemId, String, String),
     ToolAction {
         tool: String,
         action: String,
@@ -297,6 +298,17 @@ impl Bridge {
                 let _ = core.act(action).await;
             }
             UiMessage::Command(command) => self.command(state, frame, &command).await,
+            UiMessage::SetSeedLimits(id, ratio, days) => {
+                let result = dawnload_core::seeding::parse_ratio(&ratio)
+                    .and_then(|ratio| dawnload_core::seeding::parse_seed_days(&days).map(|seconds| (ratio, seconds)));
+                frame.notice = Some(match result {
+                    Ok((ratio, seconds)) => match self.core.act(Action::SetSeedLimits { id, ratio, seconds }).await {
+                        Ok(()) => "Seed limits saved.".into(),
+                        Err(error) => error,
+                    },
+                    Err(error) => error.into(),
+                });
+            }
             UiMessage::SetOption(key, value) => {
                 if view::set_option(&mut state.settings, &key, value) {
                     core.set_settings(state.settings.clone()).await;

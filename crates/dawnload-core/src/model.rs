@@ -190,8 +190,10 @@ pub struct Options {
     pub connections: u8,
     /// Direct downloads: verify the file before keeping it.
     pub checksum: Option<Checksum>,
-    /// Torrents: stop seeding at this upload ratio. None seeds until stopped.
+    /// Torrents: stop seeding at this upload ratio. None disables the ratio limit.
     pub seed_ratio_limit: Option<f64>,
+    /// Torrents: elapsed seconds from first completion. None disables the time limit.
+    pub seed_time_limit_secs: Option<u64>,
     /// Torrents: show the file list before the download starts.
     pub ask_for_files: bool,
 }
@@ -209,6 +211,7 @@ impl Default for Options {
             connections: 4,
             checksum: None,
             seed_ratio_limit: Some(1.0),
+            seed_time_limit_secs: Some(crate::seeding::DEFAULT_SEED_SECONDS),
             ask_for_files: false,
         }
     }
@@ -249,6 +252,17 @@ impl Options {
             EngineId::Torrent | EngineId::Demo => {
                 if let Some(limit) = self.seed_ratio_limit {
                     parts.push(format!("Seed to {}", format::ratio(limit)));
+                }
+                if let Some(limit) = self.seed_time_limit_secs {
+                    let duration = if limit >= 86_400 && limit.is_multiple_of(86_400) {
+                        format::count((limit / 86_400) as usize, "day")
+                    } else {
+                        format::time_left(limit)
+                    };
+                    parts.push(format!("Up to {duration}"));
+                }
+                if parts.is_empty() {
+                    parts.push("Seed until I stop it".into());
                 }
             }
         }
@@ -325,6 +339,8 @@ pub struct Item {
     pub transfer: Transfer,
     pub swarm: Option<Swarm>,
     #[serde(default)]
+    pub seed_progress: crate::seeding::SeedProgress,
+    #[serde(default)]
     pub files: Vec<ItemFile>,
     pub failure: Option<DownloadFailure>,
     /// The command that ran last, for the log and "copy command".
@@ -350,6 +366,7 @@ impl Item {
             phase_detail: None,
             transfer: Transfer::default(),
             swarm: None,
+            seed_progress: Default::default(),
             files: Vec::new(),
             failure: None,
             command: None,
@@ -437,6 +454,6 @@ mod tests {
         options.cookies = Cookies::Browser("firefox".into());
         assert_eq!(options.summary(EngineId::GalleryDl), "Original files · Polish · firefox cookies");
         assert_eq!(options.summary(EngineId::Direct), "4 connections · firefox cookies");
-        assert_eq!(options.summary(EngineId::Torrent), "Seed to 1.00");
+        assert_eq!(options.summary(EngineId::Torrent), "Seed to 1.00 · Up to 7 days");
     }
 }
